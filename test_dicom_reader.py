@@ -11,7 +11,7 @@ Created on Tue Dec 01 08:07:19 2015
 import dicom
 import os
 import numpy as np
-from matplotlib import pyplot, cm
+from matplotlib import pyplot
 
 # Path to the DICOMs we're interested in
 PathDicom = "../Crohns/converted/anon_1181403/anon/tgz/anon_mr_150420_30sec"
