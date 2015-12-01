@@ -18,8 +18,6 @@ import numpy as np
 import matplotlib.pyplot as pl
 
 # Filter stuff
-from scipy import ndimage as ndi
-from skimage.filters import gabor_kernel
 from sklearn.feature_extraction.image import extract_patches_2d
 from sklearn.decomposition import PCA
 
