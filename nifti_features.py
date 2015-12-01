@@ -106,8 +106,56 @@ def extract_roi_patches(image, label, patch_size):
         print("Number of ROI patches: ", len(patches_mask))
             
     return patches_mask
+
+"""
+Generates important component patches given a set of normally-extracted
+patches by using PCA.
+
+get_eigenpatches(np.ndarray, int) --> np.ndarray
+"""
+def get_eigenpatches(patches, no_components):
+    # Configure PCA    
+    pca = PCA(n_components=no_components)
     
-if TEST:
+    # Grab and reshape the patches
+    patches = np.array(patches)
+    patches = patches.reshape(patches.shape[0], -1)
+    #patches_mask -= np.mean(patches_mask, axis=0)
+    #patches_mask /= np.std(patches_mask, axis=0)
+    
+    # Decompose
+    t0 = time()
+    eigens = pca.fit(patches).components_
+    dt = time() - t0
+    
+    if DEBUG:
+        print("Decomposed in %.2fs." % dt)
+    
+    return eigens
+    
+"""
+Given some eigenpatches, plot them on the screen. This should work for
+all patches in general.
+
+show_eigenpatches_(np.ndarray) --> None
+"""
+def show_eigenpatches(eigens, patch_size):
+    psize = (patch_size, patch_size)
+    plt.figure(figsize=(4.2, 4))
+    for i, comp in enumerate(eigens):
+        plt.subplot(5, 5, i + 1)
+        plt.imshow(comp.reshape(psize), cmap=plt.cm.gray_r, 
+                   interpolation='nearest')
+        plt.xticks(())
+        plt.yticks(())
+    plt.suptitle('Eigen-decomposition of Patches in ROI\n', fontsize=16)
+    plt.subplots_adjust(0.08, 0.02, 0.92, 0.85, 0.08, 0.23)
+    plt.show()
+    
+"""
+This is where I test!
+"""
+def test_routine():
     path = ""
     filename = path + "anon_mr_150420_30sec.nii.gz"
     filename_label = path + "anon_mr_150420_30sec.nii-label.nrrd.nii.gz"
@@ -126,7 +174,7 @@ if TEST:
         plt.imshow(label_slice, cmap=plt.cm.gray)
         plt.show()
 
-    # Show the mask, if you want
+    # Show the mask
     if SHOW_IMG:
         print("Masked version: ")
         mask = np.where(label_slice == 0, label_slice, image_slice)
@@ -135,6 +183,17 @@ if TEST:
     
     # Extract patches in ROI
     patches_mask = extract_roi_patches(image_slice, label_slice, PATCH_SIZE)
+    
+    # Get the decomposed patches
+    eigens = get_eigenpatches(patches_mask, MAX_EIGEN)
+    
+    # Show the eigens, if you want
+    if SHOW_IMG:
+        show_eigenpatches(eigens, PATCH_SIZE)
+
+if TEST:
+    test_routine()
+    
     
     
     
