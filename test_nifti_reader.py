@@ -9,6 +9,9 @@ Created on Tue Dec 01 09:17:45 2015
 # The good print
 from __future__ import print_function
 
+# Timing
+from time import time
+
 # Packages
 import nibabel as nib
 import numpy as np
@@ -18,11 +21,14 @@ import matplotlib.pyplot as pl
 from scipy import ndimage as ndi
 from skimage.filters import gabor_kernel
 from sklearn.feature_extraction.image import extract_patches_2d
+from sklearn.decomposition import PCA
 
 PATCH_SIZE = 20
+MAX_EIGEN = 25
 
 # Path to the file we're interested in
-path = "../Crohns/converted/anon_1181403/anon/nifti/"
+#path = "../Crohns/converted/anon_1181403/anon/nifti/"
+path = ""
 filename = path + "anon_mr_150420_30sec.nii.gz"
 filename_label = path + "anon_mr_150420_30sec.nii-label.nrrd.nii.gz"
 
@@ -76,3 +82,28 @@ for i, patch in enumerate(patches_original):
     if 0 not in patches_label[i]:
         patches_mask.append(patch)
 
+# We still have like 6000+ patches. Reduce with PCA
+pca = PCA(n_components=MAX_EIGEN)
+patches_mask = np.array(patches_mask)
+patches_mask2 = patches_mask
+patches_mask = patches_mask.reshape(patches_mask.shape[0], -1)
+#patches_mask -= np.mean(patches_mask, axis=0)
+#patches_mask /= np.std(patches_mask, axis=0)
+
+# Decompose
+t0 = time()
+eigens = pca.fit(patches_mask).components_
+dt = time() - t0
+print("Decomposed in %.2fs." % dt)
+
+#plot dictionary
+pl.figure(figsize=(4.2, 4))
+for i, comp in enumerate(eigens):
+    pl.subplot(5, 5, i + 1)
+    pl.imshow(comp.reshape(psize), cmap=pl.cm.gray_r, interpolation='nearest')
+    pl.xticks(())
+    pl.yticks(())
+pl.suptitle('Eigen-decomposition of Patches in ROI\n' 
++ 'Train time %.1fs on %d patches' % (dt, MAX_EIGEN), fontsize=16)
+pl.subplots_adjust(0.08, 0.02, 0.92, 0.85, 0.08, 0.23)
+pl.show()
