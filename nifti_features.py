@@ -32,15 +32,6 @@ SHOW_IMG = 1
 TEST = 1
 
 """
-Image normalisation from the Gabor example.
-"""
-def power(image, kernel):
-    # Normalize images for better comparison.
-    image = (image - image.mean()) / image.std()
-    return np.sqrt(ndi.convolve(image, np.real(kernel), mode='wrap')**2 +
-                   ndi.convolve(image, np.imag(kernel), mode='wrap')**2)
-
-"""
 Extracts the data for single image from a NIFTI-encoded medical image.
 Returns the raw image data and the affine transformation as a tuple.
 
@@ -182,7 +173,16 @@ def generate_kernels():
     return kernels
 
 """
-From a kernel and an image, compute the features of the image.
+Image normalisation from the Gabor example.
+"""
+def power(image, kernel):
+    # Normalize images for better comparison.
+    image = (image - image.mean()) / image.std()
+    return np.sqrt(ndi.convolve(image, np.real(kernel), mode='wrap')**2 +
+                   ndi.convolve(image, np.imag(kernel), mode='wrap')**2)
+
+"""
+From a bunch of kernels and an image, compute a set of features of the image.
 """    
 def compute_feats(image, kernels):
     feats = np.zeros((len(kernels), 2), dtype=np.double)
@@ -191,6 +191,15 @@ def compute_feats(image, kernels):
         feats[k, 0] = filtered.mean()
         feats[k, 1] = filtered.var()
     return feats
+    
+"""
+From a kernel and an image, compute all the powers of an image.
+"""
+def compute_powers(image, kernels):
+    powers = []
+    for kernel in kernels:
+        powers.append(power(image, kernel))
+    return powers
 
 """
 Compares features against reference features.
@@ -305,6 +314,14 @@ if TEST:
         
     # Generate Gabor Kernels
     kernels = generate_kernels()
+    
+    all_features = []
+    all_powers = []
+    
+    # Iterate through each eigenpatch, compute the features
+    for eigen in eigens:
+        all_features.append(compute_feats(eigen, kernels))
+        all_powers.append(compute_powers(eigen, kernels))
     
     # Show the Gabors
     plot_gabor(eigens)
