@@ -124,7 +124,7 @@ patches by using PCA.
 
 get_eigenpatches(np.ndarray, int) --> np.ndarray
 """
-def get_eigenpatches(patches, no_components):
+def get_eigenpatches(patches, patch_size, no_components):    
     # Configure PCA    
     pca = PCA(n_components=no_components)
     
@@ -142,6 +142,9 @@ def get_eigenpatches(patches, no_components):
     if DEBUG:
         print("Decomposed in %.2fs." % dt)
     
+    # Reshape back to normal
+    eigens = eigens.reshape(eigens.shape[0], patch_size, patch_size)
+    
     return eigens
     
 """
@@ -150,12 +153,14 @@ all patches in general.
 
 show_eigenpatches_(np.ndarray) --> None
 """
-def show_eigenpatches(eigens, patch_size):
-    psize = (patch_size, patch_size)
+def show_eigenpatches(eigens): #, patch_size):
+    #psize = (patch_size, patch_size)
     plt.figure(figsize=(4.2, 4))
     for i, comp in enumerate(eigens):
         plt.subplot(5, 5, i + 1)
-        plt.imshow(comp.reshape(psize), cmap=plt.cm.gray, interpolation='nearest')
+        #plt.imshow(comp.reshape(psize), cmap=plt.cm.gray, 
+        #           interpolation='nearest')
+        plt.imshow(comp, cmap=plt.cm.gray, interpolation='nearest')
         plt.xticks(())
         plt.yticks(())
     plt.suptitle('Eigen-decomposition of Patches in ROI\n', fontsize=16)
@@ -200,9 +205,12 @@ def match(feats, ref_feats):
             min_i = i
     return min_i
     
-def plot_gabor(images, patch_size):
-    # Plot a selection of the filter bank kernels and their responses.
-    images = images.reshape(images.shape[0], patch_size, patch_size)
+"""
+Plot a selection of filter banks and their Gabor responses.
+"""
+def plot_gabor(images): #, patch_size):
+    
+    #images = images.reshape(images.shape[0], patch_size, patch_size)
     
     results = []
     kernel_params = []
@@ -219,7 +227,8 @@ def plot_gabor(images, patch_size):
     fig, axes = plt.subplots(nrows=5, ncols=11, figsize=(11, 6))
     plt.gray()
     
-    fig.suptitle('Image responses for Gabor filter kernels', fontsize=12)
+    fig.suptitle('Image responses for (a selection of) Gabor filter kernels', 
+                 fontsize=16)
     
     axes[0][0].axis('off')
     
@@ -228,6 +237,8 @@ def plot_gabor(images, patch_size):
                                images, axes[0][1:]):
         ax.imshow(img, cmap=plt.cm.gray, interpolation='nearest')
         ax.set_title(label, fontsize=9)
+        ax.set_xticks([])
+        ax.set_yticks([])
         ax.axis('off')
     
     for label, (kernel, powers), ax_row in zip(kernel_params, results, axes[1:]):
@@ -286,17 +297,17 @@ if TEST:
     patches_mask = extract_roi_patches(image_slice, label_slice, PATCH_SIZE)
     
     # Get the decomposed patches
-    eigens = get_eigenpatches(patches_mask, MAX_EIGEN)
+    eigens = get_eigenpatches(patches_mask, PATCH_SIZE, MAX_EIGEN)
     
     # Show the eigens, if you want
     if SHOW_IMG:
-        show_eigenpatches(eigens, PATCH_SIZE)
+        show_eigenpatches(eigens)
         
     # Generate Gabor Kernels
     kernels = generate_kernels()
     
     # Show the Gabors
-    plot_gabor(eigens, PATCH_SIZE)
+    plot_gabor(eigens)
     
     
     
