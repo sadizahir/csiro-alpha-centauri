@@ -18,8 +18,6 @@ import matplotlib.pyplot as plt
 # Scientific
 from sklearn.feature_extraction.image import extract_patches_2d
 from sklearn.decomposition import PCA
-from skimage import data
-from skimage.util import img_as_float
 from skimage.filters import gabor_kernel
 from scipy import ndimage as ndi
 
@@ -244,7 +242,8 @@ def plot_gabor(images, patch_size):
         vmin = np.min(powers)
         vmax = np.max(powers)
         for patch, ax in zip(powers, ax_row[1:]):
-            ax.imshow(patch, vmin=vmin, vmax=vmax, interpolation='nearest')
+            ax.imshow(patch, vmin=vmin, vmax=vmax, cmap=plt.cm.gray,
+                      interpolation='nearest')
             ax.axis('off')
     
     plt.show()
