@@ -14,6 +14,7 @@ from time import time
 import nibabel as nib
 import numpy as np
 import matplotlib.pyplot as plt
+import math
 
 # Scientific
 from sklearn.feature_extraction.image import extract_patches_2d
@@ -23,7 +24,7 @@ from scipy import ndimage as ndi
 
 # Patch Generation Constants
 PATCH_SIZE = 20
-MAX_EIGEN = 10
+MAX_EIGEN = 25
 
 # Debugging stuff
 # Set to 0 if you don't want image-size messages, timing, etc.
@@ -146,9 +147,16 @@ show_eigenpatches_(np.ndarray) --> None
 """
 def show_eigenpatches(eigens): #, patch_size):
     #psize = (patch_size, patch_size)
-    plt.figure(figsize=(4.2, 4))
+
+    columns = 5
+    rows = int(len(eigens) / columns)
+    if rows < 1:
+        rows = 1
+    #height = int(rows / 2)
+
+    plt.figure(figsize=(4, rows))
     for i, comp in enumerate(eigens):
-        plt.subplot(5, 5, i + 1)
+        plt.subplot(rows, columns, i + 1)
         #plt.imshow(comp.reshape(psize), cmap=plt.cm.gray, 
         #           interpolation='nearest')
         plt.imshow(comp, cmap=plt.cm.gray, interpolation='nearest')
@@ -315,16 +323,18 @@ if TEST:
     # Generate Gabor Kernels
     kernels = generate_kernels()
     
+    # Show the Gabors
+    plot_gabor(eigens)
+
+    # Store all the features and Gabor responses    
     all_features = []
     all_powers = []
-    
-    # Iterate through each eigenpatch, compute the features
     for eigen in eigens:
         all_features.append(compute_feats(eigen, kernels))
         all_powers.append(compute_powers(eigen, kernels))
     
-    # Show the Gabors
-    plot_gabor(eigens)
+    
+    
     
     
     
