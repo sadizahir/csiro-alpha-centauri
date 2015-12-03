@@ -88,6 +88,7 @@ def show_eigenpatches(eigens): #, patch_size):
     rows = int(len(eigens) / columns)
     if rows < 1:
         rows = 1
+    subplot_adj = (0.08, 0.02, 0.92, 0.85, 0.08, 0.23)
     #height = int(rows / 2)
 
     plt.figure(figsize=(4, rows))
@@ -99,5 +100,5 @@ def show_eigenpatches(eigens): #, patch_size):
         plt.xticks(())
         plt.yticks(())
     plt.suptitle('Eigen-decomposition of Patches in ROI\n', fontsize=16)
-    plt.subplots_adjust(0.08, 0.02, 0.92, 0.85, 0.08, 0.23)
+    plt.subplots_adjust(*subplot_adj)
     plt.show()
