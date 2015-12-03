@@ -138,14 +138,17 @@ def test_routine():
 if TEST:
     test_routine()
     path = ""
-    filename = path + "anon_mr_150420_30sec.nii.gz"
-    filename_label = path + "anon_mr_150420_30sec.nii-label.nrrd.nii.gz"
+    filenames = [path + "anon_mr_150420_30sec.nii.gz"]
+    filenames_label = [path + "anon_mr_150420_30sec.nii-label.nrrd.nii.gz"]
     slice_no = 51
     
-    if DEBUG:
-        print("Example: ", filename, "\n")
-        
-    get_gabor(filename, filename_label, slice_no)
+    slice_infos = []
+    
+    for i, fn in enumerate(filenames):
+        if DEBUG:
+            print("Processing: ", fn, ", Slice ", slice_no)
+        slice_info = get_gabor(fn, filenames_label[i], slice_no)
+        slice_infos.append(slice_info)
     
 
     
