@@ -31,6 +31,7 @@ def get_nifti_slice(filename, slice_no):
     orientation = image.get_affine()
     
     if DEBUG:
+        print("Debug is ", DEBUG)
         print("NIFTI Shape: ", image_data.shape)
         
     # Extract the slice from the 3D volume

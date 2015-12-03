@@ -12,6 +12,7 @@ from __future__ import print_function
 # Basic Packages
 import numpy as np
 import matplotlib.pyplot as plt
+import os
 
 # Sci
 from sklearn.ensemble import RandomForestClassifier
@@ -31,8 +32,8 @@ MAX_EIGEN = 25
 
 # Debugging stuff
 # Set to 0 if you don't want image-size messages, timing, etc.
-DEBUG = 1
-SHOW_IMG = 1
+DEBUG = 0
+SHOW_IMG = 0
 TEST = 1  
 
 class SliceInfo():
@@ -73,9 +74,10 @@ class SliceInfo():
         
         plot_gabor(self.eigens)
         
-    def save_report(self):
-        eigen_fn = show_eigenpatches(self.eigens, self.filename)   
-        gabor_fn = plot_gabor(self.eigens, self.filename)
+    def save_report(self, path):
+        save_fn = path + os.path.basename(self.filename)
+        eigen_fn = show_eigenpatches(self.eigens, save_fn)   
+        gabor_fn = plot_gabor(self.eigens, save_fn)
         
         # base pdf
         plt.figure(figsize=(20, 28))
@@ -88,7 +90,7 @@ class SliceInfo():
                         self.image_slice)
         
         # Saves a summary of the slice information as pdf 
-        with PdfPages(self.filename + '.pdf') as pdf:
+        with PdfPages(save_fn + '.pdf') as pdf:
             plt.subplot(2, 3, 1)
             plt.imshow(self.image_slice, cmap = plt.cm.gray)
             plt.xticks(())
@@ -170,7 +172,7 @@ def process(filename, filename_label, slice_no):
                      label_slice,
                      orientation_label, patches_mask, eigens, kernels,
                      all_features, all_powers)
-"""
+""" 
 Given a set of features of associated labels, trains a random forest
 classifier.
 """
@@ -186,7 +188,7 @@ def test_routine():
 
 if TEST:
     test_routine()
-    path = ""
+    path = "mri/"
     filenames = [path + "anon_mr_150420_30sec.nii.gz"]
     filenames_label = [path + "anon_mr_150420_30sec.nii-label.nrrd.nii.gz"]
     slice_no = 51
@@ -200,5 +202,5 @@ if TEST:
         slice_infos.append(slice_info)
         
     for sl in slice_infos:
-        #sl.save_report()
+        sl.save_report("reports/")
         pass

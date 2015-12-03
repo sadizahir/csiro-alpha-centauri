@@ -84,6 +84,8 @@ show_eigenpatches_(np.ndarray) --> None
 def show_eigenpatches(eigens, filename=None): #, patch_size):
     #psize = (patch_size, patch_size)
 
+    plt.figure()
+
     columns = 5
     rows = int(len(eigens) / columns)
     if rows < 1:
@@ -107,4 +109,5 @@ def show_eigenpatches(eigens, filename=None): #, patch_size):
         plt.savefig(save_to)
         return save_to
     else:
-        plt.show()
+        #plt.show()
+        pass
