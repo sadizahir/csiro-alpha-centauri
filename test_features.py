@@ -13,6 +13,9 @@ from __future__ import print_function
 import numpy as np
 import matplotlib.pyplot as plt
 
+# Sci
+from sklearn.ensemble import RandomForestClassifier
+
 # Helpers
 from helper_io import get_nifti_slice, get_nrrd_data
 from helper_eigen import extract_roi_patches, get_eigenpatches
@@ -29,20 +32,49 @@ MAX_EIGEN = 25
 DEBUG = 1
 SHOW_IMG = 1
 TEST = 1  
-  
-"""
-This is where I test!
-"""
-def test_routine():
-    pass
 
-if TEST:
-    test_routine()
-    path = ""
-    filename = path + "anon_mr_150420_30sec.nii.gz"
-    filename_label = path + "anon_mr_150420_30sec.nii-label.nrrd.nii.gz"
-    slice_no = 51
-    print("Example: ", filename, "\n")
+class SliceInfo():
+    def __init__(self, image_slice, orientation_slice, label_slice, 
+                 orientation_label, patches_mask, eigens, kernels,
+                 all_features, all_powers):
+        
+        self.image_slice = image_slice
+        self.orientation_slice = orientation_slice
+        self.label_slice = label_slice
+        self.orientation_label = orientation_label
+        
+        self.patches_mask = patches_mask
+        
+        self.eigens = eigens
+        
+        self.kernels = kernels
+        self.all_features = all_features
+        self.all_powers = all_powers
+        
+    def display_all(self):
+        plt.imshow(self.image_slice, cmap = plt.cm.gray)
+        plt.show()
+        
+        plt.imshow(self.label_slice, cmap=plt.cm.gray)
+        plt.show()
+        
+        print("Masked version: ")
+        mask = np.where(self.label_slice == 0, self.label_slice, 
+                        self.image_slice)
+        plt.imshow(mask, cmap=plt.cm.gray)
+        plt.show()
+        
+        show_eigenpatches(self.eigens)
+        
+        plot_gabor(self.eigens)
+        
+
+"""
+Given a filename, open the volume, extract a slice and associated slice
+from a label file, extract patches from a region of interest, decompose the
+patches, and apply Gabor filters.
+"""
+def get_gabor(filename, filename_label, slice_no):
     
     # Grab the image
     image_slice, orientation_slice = get_nifti_slice(filename, slice_no)
@@ -85,6 +117,39 @@ if TEST:
     for eigen in eigens:
         all_features.append(compute_feats(eigen, kernels))
         all_powers.append(compute_powers(eigen, kernels))
+        
+    return SliceInfo(image_slice, orientation_slice, label_slice,
+                     orientation_label, patches_mask, eigens, kernels,
+                     all_features, all_powers)
+"""
+Given a set of features of associated labels, trains a random forest
+classifier.
+"""
+def train_rf_classifier(features, labels, no_trees):
+    rf = RandomForestClassifier(n_estimators=no_trees, n_jobs=-1)
+    rf.fit(features, labels)
+
+"""
+This is where I test!
+"""
+def test_routine():
+    pass
+
+if TEST:
+    test_routine()
+    path = ""
+    filename = path + "anon_mr_150420_30sec.nii.gz"
+    filename_label = path + "anon_mr_150420_30sec.nii-label.nrrd.nii.gz"
+    slice_no = 51
+    
+    if DEBUG:
+        print("Example: ", filename, "\n")
+        
+    get_gabor(filename, filename_label, slice_no)
+    
+
+    
+    
     
     
     
