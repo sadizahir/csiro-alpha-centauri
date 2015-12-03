@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 
 # Sci
 from sklearn.ensemble import RandomForestClassifier
+from matplotlib.backends.backend_pdf import PdfPages
 
 # Helpers
 from helper_io import get_nifti_slice, get_nrrd_data
@@ -22,6 +23,7 @@ from helper_eigen import extract_roi_patches, get_eigenpatches
 from helper_eigen import show_eigenpatches
 from helper_gabor import generate_kernels, power, compute_feats
 from helper_gabor import compute_powers, match, plot_gabor
+
 
 # Patch Generation Constants
 PATCH_SIZE = 20
@@ -34,10 +36,13 @@ SHOW_IMG = 1
 TEST = 1  
 
 class SliceInfo():
-    def __init__(self, image_slice, orientation_slice, label_slice, 
+    def __init__(self, filename, slice_no, image_slice, orientation_slice, 
+                 label_slice, 
                  orientation_label, patches_mask, eigens, kernels,
                  all_features, all_powers):
         
+        self.filename = filename
+        self.slice_no = slice_no
         self.image_slice = image_slice
         self.orientation_slice = orientation_slice
         self.label_slice = label_slice
@@ -68,13 +73,56 @@ class SliceInfo():
         
         plot_gabor(self.eigens)
         
+    def save_report(self):
+        eigen_fn = show_eigenpatches(self.eigens, self.filename)   
+        gabor_fn = plot_gabor(self.eigens, self.filename)
+        
+        # base pdf
+        plt.figure(figsize=(20, 28))
+        
+        plt.suptitle('Report: Slice ' + str(self.slice_no) + 
+        ' for ' + self.filename + '\n', fontsize=48)
+        
+        # prepare the mask
+        mask = np.where(self.label_slice == 0, self.label_slice, 
+                        self.image_slice)
+        
+        # Saves a summary of the slice information as pdf 
+        with PdfPages(self.filename + '.pdf') as pdf:
+            plt.subplot(2, 3, 1)
+            plt.imshow(self.image_slice, cmap = plt.cm.gray)
+            plt.xticks(())
+            plt.yticks(()) 
+            plt.title('Original Image', fontsize=24)
+            
+            plt.subplot(2, 3, 2)
+            plt.imshow(mask, cmap = plt.cm.gray)
+            plt.xticks(())
+            plt.yticks(())
+            plt.title('Mask', fontsize=24)
+            
+            plt.subplot(2, 3, 3)
+            plt.imshow(plt.imread(eigen_fn))
+            plt.xticks(())
+            plt.yticks(())
+            plt.title('Eigenpatches', fontsize=24)
+            
+            plt.subplot(2, 1, 2)
+            plt.imshow(plt.imread(gabor_fn))
+            plt.xticks(())
+            plt.yticks(())
+            plt.title('Gabor responses', fontsize=24)
+            
+            pdf.savefig()
+            plt.close()
+        
 
 """
 Given a filename, open the volume, extract a slice and associated slice
 from a label file, extract patches from a region of interest, decompose the
 patches, and apply Gabor filters.
 """
-def get_gabor(filename, filename_label, slice_no):
+def process(filename, filename_label, slice_no):
     
     # Grab the image
     image_slice, orientation_slice = get_nifti_slice(filename, slice_no)
@@ -118,7 +166,8 @@ def get_gabor(filename, filename_label, slice_no):
         all_features.append(compute_feats(eigen, kernels))
         all_powers.append(compute_powers(eigen, kernels))
         
-    return SliceInfo(image_slice, orientation_slice, label_slice,
+    return SliceInfo(filename, slice_no, image_slice, orientation_slice, 
+                     label_slice,
                      orientation_label, patches_mask, eigens, kernels,
                      all_features, all_powers)
 """
@@ -147,5 +196,9 @@ if TEST:
     for i, fn in enumerate(filenames):
         if DEBUG:
             print("Processing: ", fn, ", Slice ", slice_no)
-        slice_info = get_gabor(fn, filenames_label[i], slice_no)
+        slice_info = process(fn, filenames_label[i], slice_no)
         slice_infos.append(slice_info)
+        
+    for sl in slice_infos:
+        #sl.save_report()
+        pass

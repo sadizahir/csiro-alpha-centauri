@@ -81,13 +81,14 @@ def match(feats, ref_feats):
 """
 Plot a selection of filter banks and their Gabor responses.
 """
-def plot_gabor(images): #, patch_size):
+def plot_gabor(images, filename=None): #, patch_size):
     
     #images = images.reshape(images.shape[0], patch_size, patch_size)
     
     results = []
     kernel_params = []
-    for theta in (0, 1):
+    thetas = [0, 1, 2, 3]
+    for theta in thetas:
         theta = theta / 4. * np.pi
         for frequency in (0.1, 0.4):
             kernel = gabor_kernel(frequency, theta=theta)
@@ -97,11 +98,12 @@ def plot_gabor(images): #, patch_size):
             # Save kernel and the power image for each image
             results.append((kernel, [power(img, kernel) for img in images]))
     
-    fig, axes = plt.subplots(nrows=5, ncols=11, figsize=(11, 6))
+    fig, axes = plt.subplots(nrows=2*len(thetas)+1, ncols=11, figsize=(11, 6))
     plt.gray()
     
-    fig.suptitle('Image responses for (a selection of) Gabor filter kernels', 
-                 fontsize=16)
+    if not filename:
+        fig.suptitle('Image responses for (a selection of) Gabor filter kernels', 
+                     fontsize=16)
     
     axes[0][0].axis('off')
     
@@ -130,4 +132,9 @@ def plot_gabor(images): #, patch_size):
                       interpolation='nearest')
             ax.axis('off')
     
-    plt.show()
+    if filename:
+        save_to = filename + '.gabor.png'
+        plt.savefig(save_to)
+        return save_to
+    else:
+        plt.show()
