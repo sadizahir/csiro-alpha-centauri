@@ -150,6 +150,7 @@ if TEST:
         slice_info = get_gabor(fn, filenames_label[i], slice_no)
         slice_infos.append(slice_info)
     
+    pass
 
     
     
