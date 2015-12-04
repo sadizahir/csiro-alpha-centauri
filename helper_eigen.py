@@ -84,16 +84,14 @@ show_eigenpatches_(np.ndarray) --> None
 def show_eigenpatches(eigens, filename=None): #, patch_size):
     #psize = (patch_size, patch_size)
 
-    plt.figure()
-
     columns = 5
     rows = int(len(eigens) / columns)
     if rows < 1:
         rows = 1
-    subplot_adj = (0.08, 0.02, 0.92, 0.85, 0.08, 0.23)
+    #subplot_adj = (0.08, 0.02, 0.92, 0.85, 0.08, 0.23)
     #height = int(rows / 2)
 
-    plt.figure(figsize=(5, rows))
+    plt.figure(figsize=(5, rows + 1))
     for i, comp in enumerate(eigens):
         plt.subplot(rows, columns, i + 1)
         #plt.imshow(comp.reshape(psize), cmap=plt.cm.gray, 
@@ -103,7 +101,7 @@ def show_eigenpatches(eigens, filename=None): #, patch_size):
         plt.yticks(())
     if not filename:
         plt.suptitle('Eigen-decomposition of Patches in ROI\n', fontsize=16)
-    plt.subplots_adjust(*subplot_adj)
+    #plt.subplots_adjust(*subplot_adj)
     if filename:
         save_to = filename + '.eigen.png'
         plt.savefig(save_to)
