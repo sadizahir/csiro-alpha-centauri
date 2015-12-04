@@ -33,7 +33,7 @@ MAX_EIGEN = 25
 # Debugging stuff
 # Set to 0 if you don't want image-size messages, timing, etc.
 DEBUG = 1
-SHOW_IMG = 1
+SHOW_IMG = 0
 TEST = 1  
 
 class SliceInfo():
@@ -159,7 +159,8 @@ def process(filename, filename_label, slice_no):
     kernels = generate_kernels()
     
     # Show the Gabors
-    plot_gabor(eigens)
+    if SHOW_IMG:
+        plot_gabor(eigens)
 
     # Store all the features and Gabor responses    
     all_features = []
