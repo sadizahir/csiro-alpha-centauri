@@ -32,8 +32,8 @@ MAX_EIGEN = 25
 
 # Debugging stuff
 # Set to 0 if you don't want image-size messages, timing, etc.
-DEBUG = 0
-SHOW_IMG = 0
+DEBUG = 1
+SHOW_IMG = 1
 TEST = 1  
 
 class SliceInfo():
@@ -143,7 +143,7 @@ def process(filename, filename_label, slice_no):
         print("Masked version: ")
         mask = np.where(label_slice == 0, label_slice, image_slice)
         plt.imshow(mask, cmap=plt.cm.gray)
-        plt.show()  
+        plt.show()   
     
     # Extract patches in ROI
     patches_mask = extract_roi_patches(image_slice, label_slice, PATCH_SIZE)
@@ -189,8 +189,18 @@ def test_routine():
 if TEST:
     test_routine()
     path = "mri/"
-    filenames = [path + "anon_mr_150420_30sec.nii.gz"]
-    filenames_label = [path + "anon_mr_150420_30sec.nii-label.nrrd.nii.gz"]
+
+    filenames = []
+    filenames_label = []
+
+    for fn in os.listdir(path):
+        if "label" in fn:
+            filenames_label.append(path + fn)
+        else:
+            filenames.append(path + fn)
+    
+    #filenames = [path + "anon_mr_150420_30sec.nii.gz"]
+    #filenames_label = [path + "anon_mr_150420_30sec.nii-label.nrrd.nii.gz"]
     slice_no = 51
     
     slice_infos = []
