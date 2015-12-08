@@ -19,7 +19,7 @@ from sklearn.ensemble import RandomForestClassifier
 from matplotlib.backends.backend_pdf import PdfPages
 
 # Helpers
-from helper_io import get_nifti_slice, get_nrrd_data
+from helper_io import get_nifti_slice, get_nrrd_data, find_biggest_slice
 from helper_eigen import extract_roi_patches, get_eigenpatches
 from helper_eigen import show_eigenpatches
 from helper_gabor import generate_kernels, power, compute_feats
@@ -32,8 +32,8 @@ MAX_EIGEN = 25
 
 # Debugging stuff
 # Set to 0 if you don't want image-size messages, timing, etc.
-DEBUG = 1
-SHOW_IMG = 1
+DEBUG = 0
+SHOW_IMG = 0
 TEST = 1  
 REPORTS = 0
 
@@ -202,11 +202,12 @@ if TEST:
     
     #filenames = [path + "anon_mr_150420_30sec.nii.gz"]
     #filenames_label = [path + "anon_mr_150420_30sec.nii-label.nrrd.nii.gz"]
-    slice_no = 128-105
+    #slice_no = 128-105
     
     slice_infos = []
     
     for i, fn in enumerate(filenames):
+        slice_no = find_biggest_slice(filenames_label[i])
         if DEBUG:
             print("Processing: ", fn, ", Slice ", slice_no)
         slice_info = process(fn, filenames_label[i], slice_no)

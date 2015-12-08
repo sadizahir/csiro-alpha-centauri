@@ -36,9 +36,9 @@ def get_nifti_slice(filename, slice_no):
         
     # Extract the slice from the 3D volume
     if len(image_data.shape) == 4:
-        image_slice = image_data[:, :, image_data.shape[2]-slice_no, 0]
+        image_slice = image_data[:, :, slice_no, 0]
     else:
-        image_slice = image_data[:, :, image_data.shape[2]-slice_no]
+        image_slice = image_data[:, :, slice_no]
     
     # Everything is backwards when you display it
     image_slice = np.fliplr(image_slice).T
@@ -66,7 +66,7 @@ def get_nrrd_data(filename_label, slice_no):
         print("Label (Volume) Shape: ", label_data.shape)
     
     # Extract the slices from the 3D Volume
-    label_slice = label_data[:, :, label_data.shape[2]-slice_no]
+    label_slice = label_data[:, :, slice_no]
     label_slice = np.fliplr(label_slice).T
     label_slice = np.flipud(label_slice)
     orientation_label = np.fliplr(orientation).T
@@ -91,6 +91,7 @@ def find_biggest_slice(filename_label):
     for i in range(label_data.shape[2]): # 2 will be the number of slices
         label_slice = label_data[:, :, i]
         current_count = np.count_nonzero(label_slice)
+        #print("Slice {}, Count {}".format(i, current_count))
         if current_count > slice_count:
             slice_count = current_count
             slice_no = i
