@@ -35,7 +35,10 @@ def get_nifti_slice(filename, slice_no):
         print("NIFTI Shape: ", image_data.shape)
         
     # Extract the slice from the 3D volume
-    image_slice = image_data[:, :, image_data.shape[2]-slice_no, 0]
+    if len(image_data.shape) == 4:
+        image_slice = image_data[:, :, image_data.shape[2]-slice_no, 0]
+    else:
+        image_slice = image_data[:, :, image_data.shape[2]-slice_no]
     
     # Everything is backwards when you display it
     image_slice = np.fliplr(image_slice).T
