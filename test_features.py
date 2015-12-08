@@ -35,6 +35,7 @@ MAX_EIGEN = 25
 DEBUG = 1
 SHOW_IMG = 1
 TEST = 1  
+REPORTS = 0
 
 class SliceInfo():
     def __init__(self, filename, slice_no, image_slice, orientation_slice, 
@@ -117,7 +118,24 @@ class SliceInfo():
             
             pdf.savefig()
             plt.close()
-        
+
+"""
+Determine the slice number with the highest amount of label.
+"""
+def find_biggest_slice(filename_label):
+    label = nib.load(filename_label)
+    label_data = label.get_data()
+    orientation = label.get_affine()
+    
+    # Extract the slices from the 3D Volume
+    label_slice = label_data[:, :, label_data.shape[2]-slice_no]
+
+
+    if DEBUG:
+        print("Largest slice for ", filename_label, " is #", slice_no)
+    
+    return slice_no
+
 
 """
 Given a filename, open the volume, extract a slice and associated slice
@@ -212,6 +230,6 @@ if TEST:
         slice_info = process(fn, filenames_label[i], slice_no)
         slice_infos.append(slice_info)
         
-    for sl in slice_infos:
-        sl.save_report("reports/")
-        pass
+    if REPORTS:
+        for sl in slice_infos:
+            sl.save_report("reports/")
