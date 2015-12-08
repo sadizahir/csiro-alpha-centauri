@@ -120,24 +120,6 @@ class SliceInfo():
             plt.close()
 
 """
-Determine the slice number with the highest amount of label.
-"""
-def find_biggest_slice(filename_label):
-    label = nib.load(filename_label)
-    label_data = label.get_data()
-    orientation = label.get_affine()
-    
-    # Extract the slices from the 3D Volume
-    label_slice = label_data[:, :, label_data.shape[2]-slice_no]
-
-
-    if DEBUG:
-        print("Largest slice for ", filename_label, " is #", slice_no)
-    
-    return slice_no
-
-
-"""
 Given a filename, open the volume, extract a slice and associated slice
 from a label file, extract patches from a region of interest, decompose the
 patches, and apply Gabor filters.
