@@ -75,4 +75,27 @@ def get_nrrd_data(filename_label, slice_no):
     if DEBUG:
         print("Label (Slice) Shape: ", label_slice.shape)
     
-    return (label_slice, orientation_label) 
+    return (label_slice, orientation_label)
+    
+"""
+Determine the slice number with the highest amount of label.
+"""
+def find_biggest_slice(filename_label):
+    label = nib.load(filename_label)
+    label_data = label.get_data()
+    slice_count = 0 # counts the number of nonzero pixels in the biggest slice so far
+    slice_no = 0 # the biggest slice so far    
+    
+    # Go through each slice of the label volume in order to determine the
+    # slice with the largest label
+    for i in range(label_data.shape[2]): # 2 will be the number of slices
+        label_slice = label_data[:, :, i]
+        current_count = np.count_nonzero(label_slice)
+        if current_count > slice_count:
+            slice_count = current_count
+            slice_no = i
+    
+    if DEBUG:
+        print("Largest slice for ", filename_label, " is #", slice_no)
+    
+    return slice_no
