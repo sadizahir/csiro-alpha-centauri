@@ -27,13 +27,13 @@ from helper_gabor import compute_powers, match, plot_gabor
 
 
 # Patch Generation Constants
-PATCH_SIZE = 20
+PATCH_SIZE = 10
 MAX_EIGEN = 25
 
 # Debugging stuff
 # Set to 0 if you don't want image-size messages, timing, etc.
 DEBUG = 1
-SHOW_IMG = 0
+SHOW_IMG = 1
 TEST = 1  
 
 class SliceInfo():
@@ -189,20 +189,20 @@ def test_routine():
 
 if TEST:
     test_routine()
-    path = "mri/"
+    path = "lfov/"
 
     filenames = []
     filenames_label = []
 
     for fn in os.listdir(path):
-        if "label" in fn:
+        if "GOLD" in fn:
             filenames_label.append(path + fn)
         else:
             filenames.append(path + fn)
     
     #filenames = [path + "anon_mr_150420_30sec.nii.gz"]
     #filenames_label = [path + "anon_mr_150420_30sec.nii-label.nrrd.nii.gz"]
-    slice_no = 51
+    slice_no = 128-105
     
     slice_infos = []
     
