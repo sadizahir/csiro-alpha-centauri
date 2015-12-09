@@ -35,9 +35,9 @@ MAX_EIGEN = 10
 # Set to 0 if you don't want image-size messages, timing, etc.
 DEBUG = 0
 SHOW_IMG = 0
-GENERATE = 0
+GENERATE = 1
 REPORTS = 0
-CLASSIFY = 1
+CLASSIFY = 0
 
 class SliceInfo():
     def __init__(self, filename, slice_no, image_slice, orientation_slice, 
@@ -194,8 +194,12 @@ def process(filename, filename_label, slice_no):
     # Store all the features and Gabor responses    
     all_features_mask = []
     all_powers_mask = []
+    complete_features_mask = []
+    
     all_features_nonmask = []
     all_powers_nonmask = []
+    complete_features_nonmask = []
+    
     for eigen in eigens_mask:
         all_features_mask.append(compute_feats(eigen, kernels))
         all_powers_mask.append(compute_powers(eigen, kernels))
@@ -203,6 +207,13 @@ def process(filename, filename_label, slice_no):
     for eigen in eigens_nonmask:
         all_features_nonmask.append(compute_feats(eigen, kernels))
         all_powers_nonmask.append(compute_powers(eigen, kernels))
+        
+#    for patch in patches_mask:
+#        complete_features_mask.append(compute_feats(patch, kernels))
+#    
+#    for patch in patches_nonmask:
+#        complete_features_nonmask.append(compute_feats(patch, kernels))
+        
         
     return SliceInfo(filename, slice_no, image_slice, orientation_slice, 
                      label_slice, orientation_label, kernels,
@@ -226,13 +237,13 @@ def test_routine():
 
 if GENERATE:
     test_routine()
-    path = "lfov/"
+    path = "ct/"
 
     filenames = []
     filenames_label = []
 
     for fn in os.listdir(path):
-        if "GOLD" in fn:
+        if "CTV" in fn:
             filenames_label.append(path + fn)
         else:
             filenames.append(path + fn)
@@ -258,3 +269,11 @@ else:
     with open('slice_infos.pkl', 'rb') as f:
         slice_infos = dill.load(f)
         
+#if CLASSIFY:
+#    # we need to go through each slice and collect the masked features and
+#    # unmasked features into separate arrays
+#    masked_features = []
+#    unmasked_features = []
+#    for slice_info in slice_infos:
+#        masked_features.append(slice_info.all_features_mask)
+#        unmasked_features.append(slice_info.all_features_nonmask)
