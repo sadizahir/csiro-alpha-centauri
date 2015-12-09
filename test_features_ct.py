@@ -32,7 +32,7 @@ MAX_EIGEN = 10
 
 # Debugging stuff
 # Set to 0 if you don't want image-size messages, timing, etc.
-DEBUG = 0
+DEBUG = 1
 SHOW_IMG = 0
 GENERATE = 1
 REPORTS = 0
@@ -97,8 +97,9 @@ class SliceInfo():
         plt.show()
         
         show_eigenpatches(self.eigens_mask)
+        show_eigenpatches(self.eigens_nonmask)
         
-        plot_gabor(self.eigens_mask)
+        #plot_gabor(self.eigens_mask)
         
     def save_report(self, path):
         save_fn = path + os.path.basename(self.filename)
@@ -145,6 +146,19 @@ class SliceInfo():
             plt.close()
 
 """
+Cap CT values to 2000.
+"""
+def normalise(image):
+    return np.clip(image, -1000, 2000)
+
+def get_randoms(patches, max_patches):
+    select = np.random.random_integers(0, len(patches)-1, max_patches)
+    randoms = []
+    for i in select:
+        randoms.append(patches[i])
+    return np.array(randoms)
+
+"""
 Given a filename, open the volume, extract a slice and associated slice
 from a label file, extract patches from a region of interest, decompose the
 patches, and apply Gabor filters.
@@ -153,15 +167,17 @@ def process(filename, filename_label, slice_no):
     
     # Grab the image
     image_slice, orientation_slice = get_nifti_slice(filename, slice_no)
+    image_slice = normalise(image_slice)
     if SHOW_IMG:
         plt.imshow(image_slice, cmap = plt.cm.gray)
         plt.show()
     
     # Grab the labels
     label_slice, orientation_label = get_nrrd_data(filename_label, slice_no)
-    if SHOW_IMG:
-        plt.imshow(label_slice, cmap=plt.cm.gray)
-        plt.show()
+    #if SHOW_IMG:
+    #    plt.imshow(label_slice, cmap=plt.cm.gray)
+    #    plt.show()
+                
 
     # Show the mask
     if SHOW_IMG:
@@ -176,8 +192,8 @@ def process(filename, filename_label, slice_no):
                                                         PATCH_SIZE)
     
     # Get the decomposed patches
-    eigens_mask = get_eigenpatches(patches_mask, PATCH_SIZE, MAX_EIGEN)
-    eigens_nonmask = get_eigenpatches(patches_nonmask, PATCH_SIZE, MAX_EIGEN)
+    eigens_mask = get_randoms(patches_mask, MAX_EIGEN)
+    eigens_nonmask = get_randoms(patches_nonmask, MAX_EIGEN)
     
     # Show the eigens, if you want
     if SHOW_IMG:
@@ -193,11 +209,9 @@ def process(filename, filename_label, slice_no):
     # Store all the features and Gabor responses    
     all_features_mask = []
     all_powers_mask = []
-    complete_features_mask = []
     
     all_features_nonmask = []
     all_powers_nonmask = []
-    complete_features_nonmask = []
     
     for eigen in eigens_mask:
         all_features_mask.append(compute_feats(eigen, kernels))
@@ -206,13 +220,7 @@ def process(filename, filename_label, slice_no):
     for eigen in eigens_nonmask:
         all_features_nonmask.append(compute_feats(eigen, kernels))
         all_powers_nonmask.append(compute_powers(eigen, kernels))
-        
-#    for patch in patches_mask:
-#        complete_features_mask.append(compute_feats(patch, kernels))
-#    
-#    for patch in patches_nonmask:
-#        complete_features_nonmask.append(compute_feats(patch, kernels))
-        
+
         
     return SliceInfo(filename, slice_no, image_slice, orientation_slice, 
                      label_slice, orientation_label, kernels,

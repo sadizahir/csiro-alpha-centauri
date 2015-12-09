@@ -33,7 +33,7 @@ MAX_EIGEN = 10
 
 # Debugging stuff
 # Set to 0 if you don't want image-size messages, timing, etc.
-DEBUG = 0
+DEBUG = 1
 SHOW_IMG = 0
 GENERATE = 1
 REPORTS = 0

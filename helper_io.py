@@ -14,7 +14,7 @@ import numpy as np
 
 # Debugging stuff
 # Set to 0 if you don't want image-size messages, timing, etc.
-DEBUG = 1
+DEBUG = 0
 SHOW_IMG = 1
 TEST = 1  
 
