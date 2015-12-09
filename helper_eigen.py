@@ -36,15 +36,18 @@ def extract_roi_patches(image, label, patch_size):
     patches_original = extract_patches_2d(image, psize)
     patches_label = extract_patches_2d(label, psize)
     patches_mask = []
+    patches_nonmask = []
     
     for i, patch in enumerate(patches_original):
         if 0 not in patches_label[i]:
             patches_mask.append(patch)
+        else:
+            patches_nonmask.append(patch)
             
     if DEBUG:
         print("Number of ROI patches: ", len(patches_mask))
             
-    return patches_mask
+    return patches_mask, patches_nonmask
 
 """
 Generates important component patches given a set of normally-extracted

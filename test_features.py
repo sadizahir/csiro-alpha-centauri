@@ -39,24 +39,33 @@ REPORTS = 0
 
 class SliceInfo():
     def __init__(self, filename, slice_no, image_slice, orientation_slice, 
-                 label_slice, 
-                 orientation_label, patches_mask, eigens, kernels,
-                 all_features, all_powers):
+                 label_slice, orientation_label, kernels,
+                 patches_mask, eigens_mask,
+                 all_features_mask, all_powers_mask,
+                 patches_nonmask, eigens_nonmask,
+                 all_features_nonmask, all_powers_nonmask):
         
         self.filename = filename
         self.slice_no = slice_no
+        
         self.image_slice = image_slice
         self.orientation_slice = orientation_slice
+        
         self.label_slice = label_slice
         self.orientation_label = orientation_label
+
+        self.kernels = kernels        
         
         self.patches_mask = patches_mask
+        self.patches_nonmask = patches_nonmask
         
-        self.eigens = eigens
+        self.eigens_mask = eigens_mask
+        self.eigens_nonmask = eigens_nonmask
         
-        self.kernels = kernels
-        self.all_features = all_features
-        self.all_powers = all_powers
+        self.all_features_mask = all_features_mask
+        self.all_powers_mask = all_powers_mask
+        self.all_features_nonmask = all_features_nonmask
+        self.all_powers_nonmask = all_powers_nonmask
         
     def display_all(self):
         plt.imshow(self.image_slice, cmap = plt.cm.gray)
@@ -71,14 +80,14 @@ class SliceInfo():
         plt.imshow(mask, cmap=plt.cm.gray)
         plt.show()
         
-        show_eigenpatches(self.eigens)
+        show_eigenpatches(self.eigens_mask)
         
-        plot_gabor(self.eigens)
+        plot_gabor(self.eigens_mask)
         
     def save_report(self, path):
         save_fn = path + os.path.basename(self.filename)
-        eigen_fn = show_eigenpatches(self.eigens, save_fn)   
-        gabor_fn = plot_gabor(self.eigens, save_fn)
+        eigen_fn = show_eigenpatches(self.eigens_mask, save_fn)   
+        gabor_fn = plot_gabor(self.eigens_mask, save_fn)
         
         # base pdf
         plt.figure(figsize=(20, 28))
@@ -146,33 +155,44 @@ def process(filename, filename_label, slice_no):
         plt.show()   
     
     # Extract patches in ROI
-    patches_mask = extract_roi_patches(image_slice, label_slice, PATCH_SIZE)
+    patches_mask, patches_nonmask = extract_roi_patches(image_slice, 
+                                                        label_slice, 
+                                                        PATCH_SIZE)
     
     # Get the decomposed patches
-    eigens = get_eigenpatches(patches_mask, PATCH_SIZE, MAX_EIGEN)
+    eigens_mask = get_eigenpatches(patches_mask, PATCH_SIZE, MAX_EIGEN)
+    eigens_nonmask = get_eigenpatches(patches_nonmask, PATCH_SIZE, MAX_EIGEN)
     
     # Show the eigens, if you want
     if SHOW_IMG:
-        show_eigenpatches(eigens)
+        show_eigenpatches(eigens_mask)
         
     # Generate Gabor Kernels
     kernels = generate_kernels()
     
     # Show the Gabors
     if SHOW_IMG:
-        plot_gabor(eigens)
+        plot_gabor(eigens_mask)
 
     # Store all the features and Gabor responses    
-    all_features = []
-    all_powers = []
-    for eigen in eigens:
-        all_features.append(compute_feats(eigen, kernels))
-        all_powers.append(compute_powers(eigen, kernels))
+    all_features_mask = []
+    all_powers_mask = []
+    all_features_nonmask = []
+    all_powers_nonmask = []
+    for eigen in eigens_mask:
+        all_features_mask.append(compute_feats(eigen, kernels))
+        all_powers_mask.append(compute_powers(eigen, kernels))
+    
+    for eigen in eigens_nonmask:
+        all_features_nonmask.append(compute_feats(eigen, kernels))
+        all_powers_nonmask.append(compute_powers(eigen, kernels))
         
     return SliceInfo(filename, slice_no, image_slice, orientation_slice, 
-                     label_slice,
-                     orientation_label, patches_mask, eigens, kernels,
-                     all_features, all_powers)
+                     label_slice, orientation_label, kernels,
+                     patches_mask, eigens_mask,
+                     all_features_mask, all_powers_mask,
+                     patches_nonmask, eigens_nonmask,
+                     all_features_nonmask, all_powers_nonmask)
 """ 
 Given a set of features of associated labels, trains a random forest
 classifier.
