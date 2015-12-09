@@ -13,6 +13,7 @@ from __future__ import print_function
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+import dill
 
 # Sci
 from sklearn.ensemble import RandomForestClassifier
@@ -27,15 +28,16 @@ from helper_gabor import compute_powers, match, plot_gabor
 
 
 # Patch Generation Constants
-PATCH_SIZE = 10
-MAX_EIGEN = 25
+PATCH_SIZE = 20
+MAX_EIGEN = 10
 
 # Debugging stuff
 # Set to 0 if you don't want image-size messages, timing, etc.
 DEBUG = 0
 SHOW_IMG = 0
-TEST = 1  
+GENERATE = 0
 REPORTS = 0
+CLASSIFY = 1
 
 class SliceInfo():
     def __init__(self, filename, slice_no, image_slice, orientation_slice, 
@@ -56,8 +58,8 @@ class SliceInfo():
 
         self.kernels = kernels        
         
-        self.patches_mask = patches_mask
-        self.patches_nonmask = patches_nonmask
+        #self.patches_mask = patches_mask
+        #self.patches_nonmask = patches_nonmask
         
         self.eigens_mask = eigens_mask
         self.eigens_nonmask = eigens_nonmask
@@ -66,6 +68,21 @@ class SliceInfo():
         self.all_powers_mask = all_powers_mask
         self.all_features_nonmask = all_features_nonmask
         self.all_powers_nonmask = all_powers_nonmask
+    
+    def shape_info(self):
+        print("Image: ", np.array(self.image_slice).shape)
+        print("Orientation: ", np.array(self.orientation_slice).shape)
+        print("Label: ", np.array(self.label_slice).shape)
+        print("Label Orientation: ", np.array(self.orientation_label).shape)
+        print("Kernels: ", np.array(self.kernels).shape)
+        #print("Masked Patches: ", np.array(self.patches_mask).shape)
+        print("Masked Eigens: ", np.array(self.eigens_mask).shape)
+        print("Masked Features: ", np.array(self.all_features_mask).shape)
+        print("Masked Powers: ", np.array(self.all_powers_mask).shape)
+        #print("Unmasked Patches: ", np.array(self.patches_nonmask).shape)
+        print("Unmasked Eigens: ", np.array(self.eigens_nonmask).shape)
+        print("Unmasked Features: ", np.array(self.all_features_nonmask).shape)
+        print("Unmasked Powers: ", np.array(self.all_powers_nonmask).shape)
         
     def display_all(self):
         plt.imshow(self.image_slice, cmap = plt.cm.gray)
@@ -207,7 +224,7 @@ This is where I test!
 def test_routine():
     pass
 
-if TEST:
+if GENERATE:
     test_routine()
     path = "lfov/"
 
@@ -236,3 +253,8 @@ if TEST:
     if REPORTS:
         for sl in slice_infos:
             sl.save_report("reports/")
+
+else:
+    with open('slice_infos.pkl', 'rb') as f:
+        slice_infos = dill.load(f)
+        
