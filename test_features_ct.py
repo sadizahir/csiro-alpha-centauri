@@ -34,9 +34,9 @@ MAX_EIGEN = 10
 # Set to 0 if you don't want image-size messages, timing, etc.
 DEBUG = 1
 SHOW_IMG = 0
-GENERATE = 1
+GENERATE = 0
 REPORTS = 0
-CLASSIFY = 0
+CLASSIFY = 1
 
 class SliceInfo():
     def __init__(self, filename, slice_no, image_slice, orientation_slice, 
@@ -276,11 +276,22 @@ else:
     with open('slice_infos.pkl', 'rb') as f:
         slice_infos = dill.load(f)
         
-#if CLASSIFY:
-#    # we need to go through each slice and collect the masked features and
-#    # unmasked features into separate arrays
-#    masked_features = []
-#    unmasked_features = []
-#    for slice_info in slice_infos:
-#        masked_features.append(slice_info.all_features_mask)
-#        unmasked_features.append(slice_info.all_features_nonmask)
+if CLASSIFY:
+    # we need to go through each slice and collect the masked features and
+    # unmasked features into separate arrays
+    masked_features = []
+    unmasked_features = []
+    for slice_info in slice_infos:
+        masked_features.append(slice_info.all_features_mask)
+        unmasked_features.append(slice_info.all_features_nonmask)
+
+    masked_features = np.array(masked_features)
+    unmasked_features = np.array(unmasked_features)    
+
+    # reshape them    
+    mfs = masked_features.shape
+    ufs = unmasked_features.shape
+    masked_features = masked_features.reshape(mfs[0] * mfs[1], mfs[2] * mfs[3])
+    unmasked_features = unmasked_features.reshape(ufs[0] * ufs[1], ufs[2] * ufs[3])
+    
+    
