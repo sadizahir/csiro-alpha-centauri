@@ -13,6 +13,8 @@ from __future__ import print_function
 import numpy as np
 import dill
 from time import time
+from joblib import Parallel, delayed
+import sys
 
 # Sci
 from sklearn.ensemble import RandomForestClassifier
@@ -190,16 +192,18 @@ def test_rf_feats(slice_infos, i):
         if RF.predict(feat_m) == 'M':
             successes += 1
         trials += 1
-        print("\rTesting Case {}/{}: {}/{}/{} successes.".format(
-        i+1, len(slice_infos), successes, trials, total), end="")
+        if(len(sys.argv) < 2):
+            print("\rTesting Case {}/{}: {}/{}/{} successes.".format(
+            i+1, len(slice_infos), successes, trials, total), end="")
     for feat_n in test_sl.feats_n:
         # flatten the feature so it can be tested
         feat_n = feat_n.flatten().reshape(1, -1)
         if RF.predict(feat_n) == 'N':
             successes += 1
         trials += 1
-        print("\rTesting Case {}/{}: {}/{}/{} successes.".format(
-        i+1, len(slice_infos), successes, trials, total), end="")
+        if(len(sys.argv) < 2):
+            print("\rTesting Case {}/{}: {}/{}/{} successes.".format(
+            i+1, len(slice_infos), successes, trials, total), end="")
     
     print("")
     
@@ -229,11 +233,18 @@ def run():
 
         t0 = time()
         
-        for i in range(len(slice_infos)):
-            successes, trials = test_rf_feats(slice_infos, i)
-            total_successes += successes
-            total_trials += trials
-        
+        if len(sys.argv) >= 2:        
+            res = Parallel(n_jobs=int(sys.argv[1]))(delayed(test_rf_feats)(slice_infos, i) for i in range(len(slice_infos)))
+            for successes, trials in res:
+                total_successes += successes
+                total_trials += trials
+
+        else:
+            for i in range(len(slice_infos)):
+                successes, trials = test_rf_feats(slice_infos, i)
+                total_successes += successes
+                total_trials += trials        
+            
         print("Rate: {}/{} = {:.2f}".format(total_successes, total_trials,
               float(total_successes)/float(total_trials)*100))
         
