@@ -11,6 +11,7 @@ from __future__ import print_function
 # Basic Packages
 import nibabel as nib
 import numpy as np
+import os
 
 # Debugging stuff
 # Set to 0 if you don't want image-size messages, timing, etc.
@@ -100,3 +101,27 @@ def find_biggest_slice(filename_label):
         print("Largest slice for ", filename_label, " is #", slice_no)
     
     return slice_no
+    
+"""
+Given a path, generate two lists. The first list will contain filenames of
+original CTs, or more strictly, filenames not containing label_filter. The
+second list will contain filenames of the CT labels, or more strictly,
+filenames which contain the label filter.
+
+This function assumes that the files of interest are arranged alphabetically,
+with half of the files being labels containing the label_filter string.
+
+The filenames *do not* include the original path, so you will have to add the
+path back in later if you want to actually open the files.
+
+get_filenames(str) --> (list[str], list[str])
+"""
+def get_filenames(path, label_filter):
+    images_fn = []
+    labels_fn = []
+    for fn in os.listdir(path):
+        if label_filter in fn:
+            labels_fn.append(fn)
+        else:
+            images_fn.append(fn)
+    return images_fn, labels_fn
