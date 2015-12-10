@@ -35,6 +35,7 @@ ct_monte = 1 # 1 will use random patches; 0 will use PCA patches
 pickle = "slice_infos.pkl" # path and filename to save the SliceInfos
 generate = 0 # toggle generation of new SliceInfos
 classify = 1 # test classification engine
+no_trees = 10 # number of trees to use for classifier
 
 class SliceInfo():
     def __init__(self, filename, slice_no,
@@ -127,6 +128,42 @@ def create_sliceinfos(images_fn, labels_fn):
     
     return slice_infos
 
+"""
+Gives you flattened training features from every slice except for the ith
+slice, which will be the test slice.
+"""
+def generate_training_feats(slice_infos, i):
+    train_m = []
+    train_n = []    
+    
+    # go through each slice
+    for j in range(len(slice_infos)):
+        # if it's the ith slice, don't include it in the training
+        if j == i:
+            continue
+        train_m.append(slice_infos[j].feats_m)
+        train_n.append(slice_infos[j].feats_n)
+    
+    train_m = np.array(train_m)
+    train_n = np.array(train_n)
+    
+    tms = train_m.shape
+    tns = train_n.shape
+    
+    train_m = train_m.reshape(tms[0] * tms[1], tms[2] * tms[3])
+    train_n = train_n.reshape(tns[0] * tns[1], tns[2] * tns[3])
+    
+    samples = np.concatenate((train_m, train_n))
+    labels = ['M' for k in train_m] + ['N' for p in train_n]
+
+    return samples, labels
+
+
+def train_rf_classifier(features, labels, no_trees):
+    rf = RandomForestClassifier(n_estimators=no_trees, n_jobs=-1)
+    rf.fit(features, labels)
+    return rf
+    
 def run():
     if generate:
         # get lists of files to process
@@ -142,6 +179,51 @@ def run():
     else:
         with open(pickle, 'rb') as f:
             slice_infos = dill.load(f)
+        
+    total_successes = 0
+    total_trials = 0
+    
+    if classify:
+        # Go through each slice and attempt classification
+        
+        for i in range(len(slice_infos)):
+            print("Testing Case {}/{}: ".format(i, len(slice_infos)), end="")
+            
+            # We need to train on masked and unmasked features from every
+            # slice except for this one
+            feats, labels = generate_training_feats(slice_infos, i)
+        
+            # Train the classifier
+            RF = train_rf_classifier(feats, labels, no_trees)
+            
+            # Test the RF on each of the feats from the test slice
+            test_sl = slice_infos[i]
+            successes = 0
+            trials = 0
+            total = len(test_sl.feats_m) + len(test_sl.feats_n)
+            for feat_m in test_sl.feats_m:
+                # flatten the feature so it can be tested
+                feat_m = feat_m.flatten()
+                if RF.predict(feat_m) == 'M':
+                    successes += 1
+                trials += 1
+                print("\rTesting Case {}/{}: {}/{}/{} successes.".format(
+                i, len(slice_infos), successes, trials, total), end="")
+            for feat_n in test_sl.feats_n:
+                # flatten the feature so it can be tested
+                feat_n = feat_n.flatten()
+                if RF.predict(feat_n) == 'N':
+                    successes += 1
+                trials += 1
+                print("\rTesting Case {}/{}: {}/{}/{} successes.".format(
+                i, len(slice_infos), successes, trials, total), end="")
+            
+            print("")
+            total_successes += successes
+            total_trials += trials
+        
+        print("Rate: {}/{} = %.2f".format(total_successes, total_trials) %
+              float(total_successes)/float(total_trials)*100)
 
         
 if __name__ == "__main__": # only run if it's the main module
