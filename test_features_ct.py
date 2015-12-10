@@ -235,6 +235,7 @@ classifier.
 def train_rf_classifier(features, labels, no_trees):
     rf = RandomForestClassifier(n_estimators=no_trees, n_jobs=-1)
     rf.fit(features, labels)
+    return rf
 
 """
 This is where I test!
@@ -294,4 +295,70 @@ if CLASSIFY:
     masked_features = masked_features.reshape(mfs[0] * mfs[1], mfs[2] * mfs[3])
     unmasked_features = unmasked_features.reshape(ufs[0] * ufs[1], ufs[2] * ufs[3])
     
+    # prepare data
+    master_feats = np.concatenate((masked_features, unmasked_features))
+    master_labels = ['P' for i in masked_features] + ['NP' for i in unmasked_features]
+    
+    passed_count = 0
+    current_count = 1
+    false_pos = 0
+    false_neg = 0
+    mp = 0
+    up = 350
+    
+    while True:
+        print("Block: {}, {} and {}, {}".format(mp, mp+10, up, up+10))        
+        
+        if up == 700:
+            break
+        
+        test_feats = np.concatenate((master_feats[mp:mp+10], master_feats[up:up+10]))
+        test_labels = master_labels[mp:mp+10] + master_labels[up:up+10]
+        
+        train_feats = np.concatenate((master_feats[:mp], master_feats[mp+10:up], master_feats[up+10:]))
+        train_labels = master_labels[:mp] + master_labels[mp+10:up] + master_labels[up+10:]
+        
+        RF = train_rf_classifier(train_feats, train_labels, 10)
+        
+        for i in range(len(test_feats)):
+            #print("Testing {}/{}: ".format(current_count, len(master_feats)), end="")
+            prediction = RF.predict(test_feats[i])
+            if prediction[0] == test_labels[i]:
+                #print("Passed.")
+                passed_count += 1
+            else:
+                #print("Failed.")
+                if prediction[0] == 'P':
+                    false_pos += 1
+                if prediction[0] == 'NP':
+                    false_neg += 1
+            current_count += 1
+        
+        mp += 10
+        up += 10
+    
+    print("Results: {}/{}".format(passed_count, len(master_feats)))
+    print("False Positive: {}/{}".format(false_pos, len(master_feats)/2))
+    print("False Negative: {}/{}".format(false_neg, len(master_feats)/2))
+        
+        # go through each of the test features and train the classifier
+    
+#    # Leave N Out! Where n = 1
+#    for i in range(len(master_feats)):
+#        print("Testing {}/{}: ".format(i+1, len(master_feats)),end="")
+#        test_feats = np.concatenate((master_feats[:i], master_feats[i:]))
+#        test_labels = master_labels[:i] + master_labels[i:]
+#        
+#        # Train the classifier on N-1 patches
+#        RF = train_rf_classifier(test_feats, test_labels, 100)
+#        
+#        # Test the classifier on the 1 missing
+#        prediction = RF.predict(master_feats[i])
+#        if prediction[0] == master_labels[i]:
+#            print("Passed.")
+#            passed_count += 1
+#        else:
+#            print("Failed.")
+#    
+#    print("Results: Passed {}/{}".format(passed_count, len(master_feats)))
     
