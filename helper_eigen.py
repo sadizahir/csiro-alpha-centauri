@@ -77,7 +77,17 @@ def get_eigenpatches(patches, patch_size, no_components):
     eigens = eigens.reshape(eigens.shape[0], patch_size, patch_size)
     
     return eigens
-    
+
+"""
+Generates a selection of max_patches random patches from the input patches.
+"""
+def get_randoms(patches, max_patches):
+    select = np.random.random_integers(0, len(patches)-1, max_patches)
+    randoms = []
+    for i in select:
+        randoms.append(patches[i])
+    return np.array(randoms)
+
 """
 Given some eigenpatches, plot them on the screen. This should work for
 all patches in general.
