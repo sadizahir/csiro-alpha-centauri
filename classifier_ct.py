@@ -11,24 +11,151 @@ from __future__ import print_function
 
 # Basic Packages
 import numpy as np
-import os
 import dill
 
 # Sci
 from sklearn.ensemble import RandomForestClassifier
 
 # Helpers
-from helper_io import get_nifti_slice, get_nrrd_data, find_biggest_slice
-from helper_io import get_filenames
-from helper_eigen import extract_roi_patches
-from helper_eigen import show_eigenpatches
+from helper_io import get_filenames, find_biggest_slice, get_nifti_slice
+from helper_eigen import extract_roi_patches, get_randoms, get_eigenpatches
 from helper_gabor import generate_kernels, compute_feats
-from helper_gabor import compute_powers, plot_gabor
-    
-if __name__ == "__main__": # only run if it's the main module
-    path = "ct/" # this will be the path to the CTs and the associated labels
-    label_filter = "CTV" # this string will be used to select the labels
 
-    images_fn, labels_fn = get_filenames(path, label_filter)
+# CONSTANTS
+path = "ct/" # path to the CTs and the associated labels
+lb_name = "CTV" # string used to select the labels
+psize = 20 # patch "radius", so the patch dimensions are psize x psize
+# how many "principal component" patches to generate per slice per class
+# for example, 10 will result in 10 PC patches for masked, 10 PC patches
+# for non-masked regions.
+pc_max = 10
+ct_cap_min = -1000 # minimum CT brightness
+ct_cap_max = 2000 # maximum CT brightness (set to 0 for no cap)
+ct_monte = 1 # 1 will use random patches; 0 will use PCA patches
+pickle = "slice_infos.pkl" # path and filename to save the SliceInfos
+generate = 0 # toggle generation of new SliceInfos
+classify = 1 # test classification engine
+
+class SliceInfo():
+    def __init__(self, filename, slice_no,
+                 slice_im, slice_im_or,
+                 slice_lb, slice_lb_or,
+                 patches_m_pc, patches_n_pc,
+                 feats_m, feats_n):
+        self.filename = filename
+        self.slice_no = slice_no
+        
+        self.slice_im = slice_im
+        self.slice_im_or = slice_im_or
+        self.slice_lb = slice_lb
+        self.slice_lb_or = slice_lb_or
+        
+        self.patches_m_pc = patches_m_pc
+        self.patches_n_pc = patches_n_pc
+        self.feats_m = feats_m
+        self.feats_n = feats_n
+
+    def get_info(self):
+        print("Filename: ", self.filename)
+        print("Slice No.: ", self.slice_no)
+        print("Image: ", np.array(self.slice_im).shape)
+        print("Orientation: ", np.array(self.slice_im_or).shape)
+        print("Label: ", np.array(self.slice_lb).shape)
+        print("Label Orientation: ", np.array(self.slice_lb_or).shape)
+        print("Masked Patches: ", np.array(self.patches_m_pc).shape)
+        print("Unmasked Patches: ", np.array(self.patches_n_pc).shape)
+        print("Masked Features: ", np.array(self.feats_m).shape)
+        print("Unmasked Features: ", np.array(self.feats_n).shape)
+        
+
+def create_pc_patches(slice_im, slice_lb):
+    # for CT, cap the image
+    if ct_cap_max:
+        slice_im = np.clip(slice_im, ct_cap_min, ct_cap_max)
     
+    # extract all of the patches
+    # _m means "masked" patches, i.e. patches that are in the ROI
+    # _n means "non-masked" patches, i.e. patches that aren't in the ROI
+    patches_m, patches_n = extract_roi_patches(slice_im, slice_lb, psize)
+
+    # use random patches to represent an image
+    if ct_monte:
+        # _m_pc means "masked" "principal components"
+        # _n_pc means "non-masked" "principal components"
+        patches_m_pc = get_randoms(patches_m, pc_max)
+        patches_n_pc = get_randoms(patches_n, pc_max)
+        
+    # generate eigenpatches using PCA
+    else:
+        patches_m_pc = get_eigenpatches(patches_m, psize, pc_max)
+        patches_n_pc = get_eigenpatches(patches_n, psize, pc_max)
     
+    return patches_m_pc, patches_n_pc
+    
+def create_sliceinfos(images_fn, labels_fn):
+    kernels = generate_kernels() # create gabor kernels
+    slice_infos = []    
+    
+    for i in range(len(images_fn)):
+        # figure out the biggest slice
+        slice_no = find_biggest_slice(path + labels_fn[i])
+        
+        # get the slice, label, and associated orientations
+        slice_im, slice_im_or = get_nifti_slice(path + images_fn[i], slice_no)
+        slice_lb, slice_lb_or = get_nifti_slice(path + labels_fn[i], slice_no)
+        
+        # figure out the principal patches
+        pc_payload = (slice_im, slice_lb)
+        patches_m_pc, patches_n_pc = create_pc_patches(*pc_payload)
+        
+        # compute gabor features for the patches
+        feats_m = []
+        feats_n = []
+        for patch in patches_m_pc:
+            feats_m.append(compute_feats(patch, kernels))
+        for patch in patches_n_pc:
+            feats_n.append(compute_feats(patch, kernels))
+        
+        # package it into a SliceInfo object
+        si_payload = (images_fn[i], slice_no, 
+                      slice_im, slice_im_or,
+                      slice_lb, slice_lb_or,
+                      patches_m_pc, patches_n_pc,
+                      feats_m, feats_n)
+        
+        slice_infos.append(SliceInfo(*si_payload))
+    
+    return slice_infos
+
+def run():
+    if generate:
+        # get lists of files to process
+        images_fn, labels_fn = get_filenames(path, lb_name)    
+        
+        # generate sliceinfos for all those images
+        slice_infos = create_sliceinfos(images_fn, labels_fn)
+        
+        # save the slice info
+        with open(pickle, 'wb') as f:
+            dill.dump(slice_infos, f)
+    
+    else:
+        with open(pickle, 'rb') as f:
+            slice_infos = dill.load(f)
+
+        
+if __name__ == "__main__": # only run if it's the main module
+    run()
+        
+        
+        
+            
+            
+        
+        
+        
+        
+        
+        
+        
+        
