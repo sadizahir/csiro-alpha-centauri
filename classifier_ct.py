@@ -12,6 +12,7 @@ from __future__ import print_function
 # Basic Packages
 import numpy as np
 import dill
+from time import time
 
 # Sci
 from sklearn.ensemble import RandomForestClassifier
@@ -24,16 +25,16 @@ from helper_gabor import generate_kernels, compute_feats
 # CONSTANTS
 path = "ct/" # path to the CTs and the associated labels
 lb_name = "CTV" # string used to select the labels
-psize = 20 # patch "radius", so the patch dimensions are psize x psize
+psize = 10 # patch "radius", so the patch dimensions are psize x psize
 # how many "principal component" patches to generate per slice per class
 # for example, 10 will result in 10 PC patches for masked, 10 PC patches
 # for non-masked regions.
-pc_max = 10
+pc_max = 50
 ct_cap_min = -1000 # minimum CT brightness
 ct_cap_max = 2000 # maximum CT brightness (set to 0 for no cap)
 ct_monte = 1 # 1 will use random patches; 0 will use PCA patches
 pickle = "slice_infos.pkl" # path and filename to save the SliceInfos
-generate = 0 # toggle generation of new SliceInfos
+generate = 1 # toggle generation of new SliceInfos
 classify = 1 # test classification engine
 no_trees = 10 # number of trees to use for classifier
 
@@ -97,7 +98,7 @@ def create_sliceinfos(images_fn, labels_fn):
     kernels = generate_kernels() # create gabor kernels
     slice_infos = []    
     
-    for i in range(len(images_fn)):
+    for i in range(len(images_fn)):        
         # figure out the biggest slice
         slice_no = find_biggest_slice(path + labels_fn[i])
         
@@ -185,6 +186,8 @@ def run():
     
     if classify:
         # Go through each slice and attempt classification
+
+        t0 = time()
         
         for i in range(len(slice_infos)):
             print("Testing Case {}/{}: ".format(i, len(slice_infos)), end="")
@@ -203,7 +206,7 @@ def run():
             total = len(test_sl.feats_m) + len(test_sl.feats_n)
             for feat_m in test_sl.feats_m:
                 # flatten the feature so it can be tested
-                feat_m = feat_m.flatten()
+                feat_m = feat_m.flatten().reshape(1, -1)
                 if RF.predict(feat_m) == 'M':
                     successes += 1
                 trials += 1
@@ -211,7 +214,7 @@ def run():
                 i, len(slice_infos), successes, trials, total), end="")
             for feat_n in test_sl.feats_n:
                 # flatten the feature so it can be tested
-                feat_n = feat_n.flatten()
+                feat_n = feat_n.flatten().reshape(1, -1)
                 if RF.predict(feat_n) == 'N':
                     successes += 1
                 trials += 1
@@ -222,8 +225,10 @@ def run():
             total_successes += successes
             total_trials += trials
         
-        print("Rate: {}/{} = %.2f".format(total_successes, total_trials) %
-              float(total_successes)/float(total_trials)*100)
+        print("Rate: {}/{} = %.2f".format(total_successes, total_trials))
+        
+        dt = time() - t0
+        print("Took %.2f seconds." % dt)
 
         
 if __name__ == "__main__": # only run if it's the main module
