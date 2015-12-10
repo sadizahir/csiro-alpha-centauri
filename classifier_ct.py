@@ -34,7 +34,7 @@ ct_cap_min = -1000 # minimum CT brightness
 ct_cap_max = 2000 # maximum CT brightness (set to 0 for no cap)
 ct_monte = 1 # 1 will use random patches; 0 will use PCA patches
 pickle = "slice_infos.pkl" # path and filename to save the SliceInfos
-generate = 1 # toggle generation of new SliceInfos
+generate = 0 # toggle generation of new SliceInfos
 classify = 1 # test classification engine
 no_trees = 10 # number of trees to use for classifier
 
@@ -165,6 +165,46 @@ def train_rf_classifier(features, labels, no_trees):
     rf.fit(features, labels)
     return rf
     
+"""
+Tests the RF classifier on the pre-computed features for a particular
+slice.
+"""
+def test_rf_feats(slice_infos, i):
+    print("Testing Case {}/{}: ".format(i+1, len(slice_infos)), end="")
+    
+    # We need to train on masked and unmasked features from every
+    # slice except for this one
+    feats, labels = generate_training_feats(slice_infos, i)
+
+    # Train the classifier
+    RF = train_rf_classifier(feats, labels, no_trees)
+    
+    # Test the RF on each of the feats from the test slice
+    test_sl = slice_infos[i]
+    successes = 0
+    trials = 0
+    total = len(test_sl.feats_m) + len(test_sl.feats_n)
+    for feat_m in test_sl.feats_m:
+        # flatten the feature so it can be tested
+        feat_m = feat_m.flatten().reshape(1, -1)
+        if RF.predict(feat_m) == 'M':
+            successes += 1
+        trials += 1
+        print("\rTesting Case {}/{}: {}/{}/{} successes.".format(
+        i+1, len(slice_infos), successes, trials, total), end="")
+    for feat_n in test_sl.feats_n:
+        # flatten the feature so it can be tested
+        feat_n = feat_n.flatten().reshape(1, -1)
+        if RF.predict(feat_n) == 'N':
+            successes += 1
+        trials += 1
+        print("\rTesting Case {}/{}: {}/{}/{} successes.".format(
+        i+1, len(slice_infos), successes, trials, total), end="")
+    
+    print("")
+    
+    return successes, trials
+    
 def run():
     if generate:
         # get lists of files to process
@@ -190,42 +230,12 @@ def run():
         t0 = time()
         
         for i in range(len(slice_infos)):
-            print("Testing Case {}/{}: ".format(i, len(slice_infos)), end="")
-            
-            # We need to train on masked and unmasked features from every
-            # slice except for this one
-            feats, labels = generate_training_feats(slice_infos, i)
-        
-            # Train the classifier
-            RF = train_rf_classifier(feats, labels, no_trees)
-            
-            # Test the RF on each of the feats from the test slice
-            test_sl = slice_infos[i]
-            successes = 0
-            trials = 0
-            total = len(test_sl.feats_m) + len(test_sl.feats_n)
-            for feat_m in test_sl.feats_m:
-                # flatten the feature so it can be tested
-                feat_m = feat_m.flatten().reshape(1, -1)
-                if RF.predict(feat_m) == 'M':
-                    successes += 1
-                trials += 1
-                print("\rTesting Case {}/{}: {}/{}/{} successes.".format(
-                i, len(slice_infos), successes, trials, total), end="")
-            for feat_n in test_sl.feats_n:
-                # flatten the feature so it can be tested
-                feat_n = feat_n.flatten().reshape(1, -1)
-                if RF.predict(feat_n) == 'N':
-                    successes += 1
-                trials += 1
-                print("\rTesting Case {}/{}: {}/{}/{} successes.".format(
-                i, len(slice_infos), successes, trials, total), end="")
-            
-            print("")
+            successes, trials = test_rf_feats(slice_infos, i)
             total_successes += successes
             total_trials += trials
         
-        print("Rate: {}/{} = %.2f".format(total_successes, total_trials))
+        print("Rate: {}/{} = {:.2f}".format(total_successes, total_trials,
+              float(total_successes)/float(total_trials)*100))
         
         dt = time() - t0
         print("Took %.2f seconds." % dt)
@@ -233,16 +243,3 @@ def run():
         
 if __name__ == "__main__": # only run if it's the main module
     run()
-        
-        
-        
-            
-            
-        
-        
-        
-        
-        
-        
-        
-        
