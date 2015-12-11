@@ -119,7 +119,7 @@ get_filenames(str) --> (list[str], list[str])
 def get_filenames(path, label_filter):
     images_fn = []
     labels_fn = []
-    for fn in os.listdir(path):
+    for fn in sorted(os.listdir(path)):
         if label_filter in fn:
             labels_fn.append(fn)
         else:
