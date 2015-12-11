@@ -18,6 +18,9 @@ import sys
 
 # Sci
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.feature_extraction.image import extract_patches_2d
+from sklearn.feature_extraction.image import reconstruct_from_patches_2d
+
 
 # Helpers
 from helper_io import get_filenames, find_biggest_slice, get_nifti_slice
@@ -36,8 +39,9 @@ ct_cap_min = -1000 # minimum CT brightness
 ct_cap_max = 2000 # maximum CT brightness (set to 0 for no cap)
 ct_monte = 1 # 1 will use random patches; 0 will use PCA patches
 pickle = "slice_infos.pkl" # path and filename to save the SliceInfos
+recons = "test_recons.pkl" # path and filename to store the patches of reconstruction
 generate = 0 # toggle generation of new SliceInfos
-classify = 2 # test classification engine
+classify = 3 # test classification engine
 no_trees = 10 # number of trees to use for classifier
 fullspec_i = 0
 
@@ -257,8 +261,48 @@ def check_classify(RF, kernels, patch, patch_label, i, tot):
         return True
     else:
         return False        
+
+# attempts to classify patch i of patches
+def classify_patch(RF, kernels, patches, i):
+    # compute the feats of the patch
+    print("Classifying patch {}/{}".format(i, len(patches)))
+    patch = patches[i]
+    feat = compute_feats(patch, kernels)
+    feat = feat.flatten().reshape(1, -1)
+    prediction = RF.predict(feat)
+    if prediction == 'M':
+        return np.ones(patch.shape)
+    else:
+        return np.zeros(patch.shape)
     
 
+"""
+Generate labels using Random Forest on a particular
+"""
+def rf_reconstruct(slice_infos, i):
+    feats, labels = generate_training_feats(slice_infos, i)
+    RF = train_rf_classifier(feats, labels, no_trees)
+    
+    test_sl = slice_infos[i]
+    image = test_sl.slice_im
+    
+    kernels = generate_kernels()
+    
+    # break the image into patches; all of these will be classified
+    patch_size = (psize, psize)
+    # _a stands for "all"
+    patches_a = extract_patches_2d(image, patch_size)
+    # _p stands for "predict"
+    
+    # check each patch
+    if len(sys.argv) >= 2:
+        patches_p = Parallel(n_jobs=int(sys.argv[1]))(delayed(classify_patch)(RF, kernels, patches_a, i) for i in range(len(patches_a)))
+        
+        # save patches_p to the drive, because it took so much work to make!
+        with open(recons, 'wb') as f:
+            dill.dump(patches_p, f)
+    
+    
     
 def run():
     if generate:
@@ -305,6 +349,9 @@ def run():
     elif classify == 2:
         test_rf_feats_fullspec(slice_infos, fullspec_i)
         pass
+    
+    elif classify == 3:
+        rf_reconstruct(slice_infos, fullspec_i)
         
 
         
