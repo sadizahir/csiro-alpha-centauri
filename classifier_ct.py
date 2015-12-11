@@ -37,8 +37,9 @@ ct_cap_max = 2000 # maximum CT brightness (set to 0 for no cap)
 ct_monte = 1 # 1 will use random patches; 0 will use PCA patches
 pickle = "slice_infos.pkl" # path and filename to save the SliceInfos
 generate = 0 # toggle generation of new SliceInfos
-classify = 1 # test classification engine
+classify = 2 # test classification engine
 no_trees = 10 # number of trees to use for classifier
+fullspec_i = 0
 
 class SliceInfo():
     def __init__(self, filename, slice_no,
@@ -208,6 +209,56 @@ def test_rf_feats(slice_infos, i):
     print("")
     
     return successes, trials
+
+
+"""
+Modified full-spectrum classification of *all* slices.
+"""
+def test_rf_feats_fullspec(slice_infos, i):
+    feats, labels = generate_training_feats(slice_infos, i)
+    RF = train_rf_classifier(feats, labels, no_trees)
+    
+    test_sl = slice_infos[i]
+    image = test_sl.slice_im
+    label = test_sl.slice_lb
+    patches_m, patches_n = extract_roi_patches(image, label, psize)
+    patches_n = patches_n
+    plabels_m = ['M' for m in patches_m]
+    plabels_n = ['N' for n in patches_n]
+    kernels = generate_kernels()
+    
+    tot = len(patches_m) + len(patches_n)
+    
+    res1 = []
+    res2 = []
+    
+    t0 = time()
+    
+    if len(sys.argv) >= 2:
+        res1 = Parallel(n_jobs=int(sys.argv[1]))(delayed(check_classify)(RF, kernels, p, plabels_m[i], i, tot) for i, p in enumerate(patches_m))
+        res2 = Parallel(n_jobs=int(sys.argv[1]))(delayed(check_classify)(RF, kernels, p, plabels_n[i], i, tot) for i, p in enumerate(patches_n))
+    else:
+        for i,p in enumerate(patches_m): # go through each patch, and classify it!
+            res1.append(check_classify(RF, kernels, p, plabels_m[i], i, tot))
+        pass
+
+    dt = time() - t0    
+    
+    print(res1.count(True) + res2.count(True))
+    print("Finished in {:.2f} seconds.".format(dt))
+
+def check_classify(RF, kernels, patch, patch_label, i, tot):        
+    # kernel the patch
+    print("Classifying patch {}/{}".format(i, tot))
+    feat = compute_feats(patch, kernels)
+    feat = feat.flatten().reshape(1, -1)
+    prediction = RF.predict(feat)
+    if prediction == patch_label:
+        return True
+    else:
+        return False        
+    
+
     
 def run():
     if generate:
@@ -228,7 +279,7 @@ def run():
     total_successes = 0
     total_trials = 0
     
-    if classify:
+    if classify == 1:
         # Go through each slice and attempt classification
 
         t0 = time()
@@ -250,6 +301,11 @@ def run():
         
         dt = time() - t0
         print("Took %.2f seconds." % dt)
+        
+    elif classify == 2:
+        test_rf_feats_fullspec(slice_infos, fullspec_i)
+        pass
+        
 
         
 if __name__ == "__main__": # only run if it's the main module
