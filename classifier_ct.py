@@ -297,12 +297,15 @@ def rf_reconstruct(slice_infos, i):
     # check each patch
     if len(sys.argv) >= 2:
         patches_p = Parallel(n_jobs=int(sys.argv[1]))(delayed(classify_patch)(RF, kernels, patches_a, i) for i in range(len(patches_a)))
-        
-        # save patches_p to the drive, because it took so much work to make!
-        with open(recons, 'wb') as f:
-            dill.dump(patches_p, f)
+            
+    else:
+        patches_p = []
+        for i in range(len(patches_a)):
+            patches_p.append(classify_patch(RF, kernels, patches_a, i))
     
-    
+    # save patches_p to the drive, because it took so much work to make!
+    with open(recons, 'wb') as f:
+        dill.dump(patches_p, f)    
     
 def run():
     if generate:
