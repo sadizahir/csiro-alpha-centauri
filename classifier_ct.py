@@ -16,6 +16,8 @@ from time import time
 from joblib import Parallel, delayed
 import sys
 
+import matplotlib.pyplot as plt
+
 # Sci
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_extraction.image import extract_patches_2d
@@ -30,20 +32,21 @@ from helper_gabor import generate_kernels, compute_feats
 # CONSTANTS
 path = "ct/" # path to the CTs and the associated labels
 lb_name = "CTV" # string used to select the labels
-psize = 10 # patch "radius", so the patch dimensions are psize x psize
+psize = 20 # patch "radius", so the patch dimensions are psize x psize
 # how many "principal component" patches to generate per slice per class
 # for example, 10 will result in 10 PC patches for masked, 10 PC patches
 # for non-masked regions.
-pc_max = 50
+pc_max = 10
 ct_cap_min = -1000 # minimum CT brightness
 ct_cap_max = 2000 # maximum CT brightness (set to 0 for no cap)
 ct_monte = 1 # 1 will use random patches; 0 will use PCA patches
 pickle = "slice_infos.pkl" # path and filename to save the SliceInfos
 recons = "test_recons.pkl" # path and filename to store the patches of reconstruction
-generate = 0 # toggle generation of new SliceInfos
-classify = 3 # test classification engine
+generate = 1 # toggle generation of new SliceInfos
+classify = 0 # test classification engine
 no_trees = 10 # number of trees to use for classifier
 fullspec_i = 0
+crop = (128, 128)
 
 class SliceInfo():
     def __init__(self, filename, slice_no,
@@ -100,39 +103,57 @@ def create_pc_patches(slice_im, slice_lb):
         patches_n_pc = get_eigenpatches(patches_n, psize, pc_max)
     
     return patches_m_pc, patches_n_pc
+
+def create_sliceinfo(images_fn, labels_fn, kernels, i):
+    # figure out the biggest slice
+    slice_no = find_biggest_slice(path + labels_fn[i])
     
+    # get the slice, label, and associated orientations
+    slice_im, slice_im_or = get_nifti_slice(path + images_fn[i], slice_no)
+    slice_lb, slice_lb_or = get_nifti_slice(path + labels_fn[i], slice_no)
+    
+    # if crop, we crop the image down
+    if crop:    
+        crop_x, crop_y = crop
+        start_x = slice_im.shape[0] / 2 - crop_x / 2
+        end_x = start_x + crop_x
+        start_y = slice_im.shape[1] / 2 - crop_y / 2
+        end_y = start_y + crop_y
+    
+        slice_im = slice_im[start_x:end_x, start_y:end_y]
+        slice_lb = slice_lb[start_x:end_x, start_y:end_y]
+            
+    # figure out the principal patches
+    pc_payload = (slice_im, slice_lb)
+    patches_m_pc, patches_n_pc = create_pc_patches(*pc_payload)
+    
+    # compute gabor features for the patches
+    feats_m = []
+    feats_n = []
+    for patch in patches_m_pc:
+        feats_m.append(compute_feats(patch, kernels))
+    for patch in patches_n_pc:
+        feats_n.append(compute_feats(patch, kernels))
+    
+    # package it into a SliceInfo object
+    si_payload = (images_fn[i], slice_no, 
+                  slice_im, slice_im_or,
+                  slice_lb, slice_lb_or,
+                  patches_m_pc, patches_n_pc,
+                  feats_m, feats_n)
+    
+    return SliceInfo(*si_payload)
+
 def create_sliceinfos(images_fn, labels_fn):
     kernels = generate_kernels() # create gabor kernels
     slice_infos = []    
     
-    for i in range(len(images_fn)):        
-        # figure out the biggest slice
-        slice_no = find_biggest_slice(path + labels_fn[i])
-        
-        # get the slice, label, and associated orientations
-        slice_im, slice_im_or = get_nifti_slice(path + images_fn[i], slice_no)
-        slice_lb, slice_lb_or = get_nifti_slice(path + labels_fn[i], slice_no)
-        
-        # figure out the principal patches
-        pc_payload = (slice_im, slice_lb)
-        patches_m_pc, patches_n_pc = create_pc_patches(*pc_payload)
-        
-        # compute gabor features for the patches
-        feats_m = []
-        feats_n = []
-        for patch in patches_m_pc:
-            feats_m.append(compute_feats(patch, kernels))
-        for patch in patches_n_pc:
-            feats_n.append(compute_feats(patch, kernels))
-        
-        # package it into a SliceInfo object
-        si_payload = (images_fn[i], slice_no, 
-                      slice_im, slice_im_or,
-                      slice_lb, slice_lb_or,
-                      patches_m_pc, patches_n_pc,
-                      feats_m, feats_n)
-        
-        slice_infos.append(SliceInfo(*si_payload))
+    if len(sys.argv) < 2:
+        for i in range(len(images_fn)):                
+            slice_infos.append(create_sliceinfo(images_fn, labels_fn, kernels, i))
+    
+    else:
+        slice_infos = Parallel(n_jobs=int(sys.argv[1]))(delayed(create_sliceinfo)(images_fn, labels_fn, kernels, i) for i in range(len(images_fn)))
     
     return slice_infos
 
@@ -253,7 +274,7 @@ def test_rf_feats_fullspec(slice_infos, i):
 
 def check_classify(RF, kernels, patch, patch_label, i, tot):        
     # kernel the patch
-    print("Classifying patch {}/{}".format(i, tot))
+    print("Checking Classifying patch {}/{}".format(i, tot))
     feat = compute_feats(patch, kernels)
     feat = feat.flatten().reshape(1, -1)
     prediction = RF.predict(feat)
@@ -303,9 +324,13 @@ def rf_reconstruct(slice_infos, i):
         for i in range(len(patches_a)):
             patches_p.append(classify_patch(RF, kernels, patches_a, i))
     
+    # reconstruct based on the patch
+    recons_im = reconstruct_from_patches_2d(np.asarray(patches_p), image.shape)
+    print(recons_im.shape)
+    
     # save patches_p to the drive, because it took so much work to make!
     with open(recons, 'wb') as f:
-        dill.dump(patches_p, f)    
+        dill.dump(recons_im, f)    
     
 def run():
     if generate:
@@ -326,8 +351,9 @@ def run():
     total_successes = 0
     total_trials = 0
     
-    if classify == 1:
-        # Go through each slice and attempt classification
+    
+    if classify == 1: # Go through each slice and classify PCPs
+    # PCP = principal component patches
 
         t0 = time()
         
@@ -349,12 +375,21 @@ def run():
         dt = time() - t0
         print("Took %.2f seconds." % dt)
         
-    elif classify == 2:
+    elif classify == 2: # check classification of all patches for one slice
         test_rf_feats_fullspec(slice_infos, fullspec_i)
         pass
     
-    elif classify == 3:
+    elif classify == 3: # fully reconstruct for one slice
         rf_reconstruct(slice_infos, fullspec_i)
+        
+    elif classify == 4: # show the reconstruct for one slice
+        with open(recons, 'rb') as f:
+            recons_im = dill.load(f)
+        
+        plt.imshow(recons_im)
+        plt.show()
+    
+        
         
 
         
