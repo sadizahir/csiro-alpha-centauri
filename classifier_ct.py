@@ -32,18 +32,18 @@ from helper_gabor import generate_kernels, compute_feats
 # CONSTANTS
 path = "ct/" # path to the CTs and the associated labels
 lb_name = "CTV" # string used to select the labels
-psize = 20 # patch "radius", so the patch dimensions are psize x psize
+psize = 15 # patch "radius", so the patch dimensions are psize x psize
 # how many "principal component" patches to generate per slice per class
 # for example, 10 will result in 10 PC patches for masked, 10 PC patches
 # for non-masked regions.
-pc_max = 10
+pc_max = 500
 ct_cap_min = -1000 # minimum CT brightness
 ct_cap_max = 2000 # maximum CT brightness (set to 0 for no cap)
 ct_monte = 1 # 1 will use random patches; 0 will use PCA patches
 pickle = "slice_infos.pkl" # path and filename to save the SliceInfos
 recons = "test_recons.pkl" # path and filename to store the patches of reconstruction
-generate = 1 # toggle generation of new SliceInfos
-classify = 0 # test classification engine
+generate = 0 # toggle generation of new SliceInfos
+classify = 4 # test classification engine
 no_trees = 10 # number of trees to use for classifier
 fullspec_i = 0
 crop = (128, 128)
@@ -232,6 +232,7 @@ def test_rf_feats(slice_infos, i):
             i+1, len(slice_infos), successes, trials, total), end="")
     
     print("")
+    print(np.asarray(slice_infos[i].feats_m).shape)
     
     return successes, trials
 
@@ -330,15 +331,36 @@ def rf_reconstruct(slice_infos, i):
     
     # save patches_p to the drive, because it took so much work to make!
     with open(recons, 'wb') as f:
-        dill.dump(recons_im, f)    
-    
+        dill.dump(recons_im, f)
+
+"""
+Threshold a reconstructed image by pushing numbers below value down to 0 and
+numbers equal to or above value up to 1.
+"""
+def threshold(image, value):
+    threshold = np.array(image) # make a copy
+    threshold[threshold < value] = 0
+    #threshold[threshold >= value] = 1
+    return threshold
+
+"""
+Uses the label to mask out the image.
+"""
+def mask_out(image, label):
+    mask = np.where(label == 0, -1000, image)
+    return mask
+   
 def run():
     if generate:
+        t0 = time()
         # get lists of files to process
         images_fn, labels_fn = get_filenames(path, lb_name)    
         
         # generate sliceinfos for all those images
         slice_infos = create_sliceinfos(images_fn, labels_fn)
+        
+        dt = time() - t0
+        print("Finished in %.2f seconds." % dt)
         
         # save the slice info
         with open(pickle, 'wb') as f:
