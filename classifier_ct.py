@@ -32,7 +32,7 @@ from helper_gabor import generate_kernels, compute_feats
 # CONSTANTS
 path = "ct/" # path to the CTs and the associated labels
 lb_name = "CTV" # string used to select the labels
-psize = 15 # patch "radius", so the patch dimensions are psize x psize
+psize = 11 # patch "radius", so the patch dimensions are psize x psize
 # how many "principal component" patches to generate per slice per class
 # for example, 10 will result in 10 PC patches for masked, 10 PC patches
 # for non-masked regions.
@@ -408,7 +408,10 @@ def run():
         with open(recons, 'rb') as f:
             recons_im = dill.load(f)
         
-        plt.imshow(recons_im)
+        plt.imshow(threshold(recons_im, 0))
+        plt.show()
+        
+        plt.imshow(slice_infos[fullspec_i].slice_lb)
         plt.show()
     
         
