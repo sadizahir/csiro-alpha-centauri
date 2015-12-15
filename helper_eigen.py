@@ -82,6 +82,7 @@ def get_eigenpatches(patches, patch_size, no_components):
 Generates a selection of max_patches random patches from the input patches.
 """
 def get_randoms(patches, max_patches):
+    #print(len(patches)-1, max_patches)
     select = np.random.random_integers(0, len(patches)-1, max_patches)
     randoms = []
     for i in select:
