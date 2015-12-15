@@ -125,3 +125,9 @@ def get_filenames(path, label_filter):
         else:
             images_fn.append(fn)
     return images_fn, labels_fn
+
+"""
+Crops an image down to an image of x by y around the centre.
+"""
+def centre_crop(im, x, y):
+    pass

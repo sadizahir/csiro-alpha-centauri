@@ -408,7 +408,7 @@ def run():
         with open(recons, 'rb') as f:
             recons_im = dill.load(f)
         
-        plt.imshow(threshold(recons_im, 0))
+        plt.imshow(threshold(recons_im, 0.66))
         plt.show()
         
         plt.imshow(slice_infos[fullspec_i].slice_lb)
