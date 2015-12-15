@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 # Scientific
 from skimage.filters import gabor_kernel
 from scipy import ndimage as ndi
+from scipy import stats
 
 # Debugging stuff
 # Set to 0 if you don't want image-size messages, timing, etc.
@@ -27,8 +28,8 @@ Generates Gabor kernels.
 """
 def generate_kernels():
     kernels = []
-    for theta in range(4):
-        theta = theta / 4. * np.pi
+    for theta in range(16):
+        theta = theta / 16. * np.pi
         for sigma in (1, 3):
             for frequency in (0.05, 0.25):
                 kernel = np.real(gabor_kernel(frequency, theta=theta,
@@ -49,11 +50,13 @@ def power(image, kernel):
 From a bunch of kernels and an image, compute a set of features of the image.
 """    
 def compute_feats(image, kernels):
-    feats = np.zeros((len(kernels), 2), dtype=np.double)
+    feats = np.zeros((len(kernels), 4), dtype=np.double)
     for k, kernel in enumerate(kernels):
         filtered = ndi.convolve(image, kernel, mode='wrap')
         feats[k, 0] = filtered.mean()
         feats[k, 1] = filtered.var()
+        feats[k, 2] = stats.skew(filtered.flatten())
+        feats[k, 3] = stats.kurtosis(filtered.flatten())
     return feats
     
 """
