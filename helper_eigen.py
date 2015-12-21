@@ -49,6 +49,30 @@ def extract_roi_patches(image, label, patch_size):
             
     return patches_mask, patches_nonmask
 
+def extract_roi_patches_w(image, label, patch_size):
+    # Extract patches
+    psize = (patch_size, patch_size)
+    patches_original = extract_patches_2d(image, psize)
+    patches_label = extract_patches_2d(label, psize)
+    patches_mask = []
+    patches_nonmask = []
+    
+    n_vals = []
+    
+    for i, patch in enumerate(patches_original):
+        if 0 not in patches_label[i]:
+            patches_mask.append(patch)
+        else:
+            patches_nonmask.append(patch)
+            n_vals.append(float(np.count_nonzero(patches_label[i]))/(patch_size * patch_size))
+    
+    m_vals = [1 for p in patches_mask]
+            
+    if DEBUG:
+        print("Number of ROI patches: ", len(patches_mask))
+            
+    return patches_mask, patches_nonmask, m_vals, n_vals
+
 """
 Generates important component patches given a set of normally-extracted
 patches by using PCA.
@@ -88,6 +112,16 @@ def get_randoms(patches, max_patches):
     for i in select:
         randoms.append(patches[i])
     return np.array(randoms)
+
+def get_randoms_w(patches, vals, max_patches):
+    #print(len(patches)-1, max_patches)
+    select = np.random.random_integers(0, len(patches)-1, max_patches)
+    randoms = []
+    randoms_vals = []
+    for i in select:
+        randoms.append(patches[i])
+        randoms_vals.append(vals[i])
+    return np.array(randoms), randoms_vals
 
 """
 Given some eigenpatches, plot them on the screen. This should work for

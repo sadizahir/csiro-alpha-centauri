@@ -14,9 +14,10 @@ import numpy as np
 import dill
 from time import time
 from joblib import Parallel, delayed
+import joblib
 import sys
-
 import matplotlib.pyplot as plt
+import os
 
 # Sci
 from sklearn.ensemble import RandomForestClassifier
@@ -26,34 +27,40 @@ from sklearn.feature_extraction.image import reconstruct_from_patches_2d
 
 # Helpers
 from helper_io import get_filenames, find_biggest_slice, get_nifti_slice
-from helper_eigen import extract_roi_patches, get_randoms, get_eigenpatches
+from helper_eigen import extract_roi_patches, extract_roi_patches_w, get_randoms, get_randoms_w, get_eigenpatches
 from helper_gabor import generate_kernels, compute_feats
 
 # CONSTANTS
 path = "ct/" # path to the CTs and the associated labels
 lb_name = "CTV" # string used to select the labels
-psize = 11 # patch "radius", so the patch dimensions are psize x psize
+psize = 13 # patch "radius", so the patch dimensions are psize x psize
 # how many "principal component" patches to generate per slice per class
 # for example, 10 will result in 10 PC patches for masked, 10 PC patches
 # for non-masked regions.
 pc_max = 500
-ct_cap_min = -1000 # minimum CT brightness
-ct_cap_max = 2000 # maximum CT brightness (set to 0 for no cap)
+ct_cap_min = -1000 # minimum CT brightness (set ct_cap_max for no clipping)
+ct_cap_max = 2000 # maximum CT brightness (set to 0 for no clipping)
 ct_monte = 1 # 1 will use random patches; 0 will use PCA patches
 pickle = "slice_infos.pkl" # path and filename to save the SliceInfos
 recons = "test_recons.pkl" # path and filename to store the patches of reconstruction
 generate = 0 # toggle generation of new SliceInfos
-classify = 4 # test classification engine
+classify = 0 # test classification engine
 no_trees = 10 # number of trees to use for classifier
-fullspec_i = 0
+fullspec_i = 2
 crop = (128, 128)
+np.seterr(all='ignore')
+
+# BIGTEST CONSTANTS
+psizes = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+
 
 class SliceInfo():
     def __init__(self, filename, slice_no,
                  slice_im, slice_im_or,
                  slice_lb, slice_lb_or,
                  patches_m_pc, patches_n_pc,
-                 feats_m, feats_n):
+                 feats_m, feats_n,
+                 vals_m=None, vals_n=None):
         self.filename = filename
         self.slice_no = slice_no
         
@@ -66,6 +73,9 @@ class SliceInfo():
         self.patches_n_pc = patches_n_pc
         self.feats_m = feats_m
         self.feats_n = feats_n
+        
+        self.vals_m = vals_m
+        self.vals_n = vals_n
 
     def get_info(self):
         print("Filename: ", self.filename)
@@ -78,6 +88,10 @@ class SliceInfo():
         print("Unmasked Patches: ", np.array(self.patches_n_pc).shape)
         print("Masked Features: ", np.array(self.feats_m).shape)
         print("Unmasked Features: ", np.array(self.feats_n).shape)
+        if self.vals_m:
+            print("Masked Values: ", self.vals_m)
+        if self.vals_n:
+            print("Unmasked Values: ", self.vals_n)
         
 
 def create_pc_patches(slice_im, slice_lb):
@@ -103,6 +117,35 @@ def create_pc_patches(slice_im, slice_lb):
         patches_n_pc = get_eigenpatches(patches_n, psize, pc_max)
     
     return patches_m_pc, patches_n_pc
+
+"""
+Weighted versions of the PC patches from previously.
+"""
+def create_pc_patches_w(slice_im, slice_lb):
+    # for CT, cap the image
+    if ct_cap_max:
+        slice_im = np.clip(slice_im, ct_cap_min, ct_cap_max)
+    
+    # extract all of the patches
+    # _m means "masked" patches, i.e. patches that are in the ROI
+    # _n means "non-masked" patches, i.e. patches that aren't in the ROI
+    patches_m, patches_n, vals_m, vals_n = extract_roi_patches_w(slice_im, 
+                                                               slice_lb, 
+                                                               psize)
+
+    # use random patches to represent an image
+    if ct_monte:
+        # _m_pc means "masked" "principal components"
+        # _n_pc means "non-masked" "principal components"
+        patches_m_pc, vals_m_pc = get_randoms_w(patches_m, vals_m, pc_max)
+        patches_n_pc, vals_n_pc = get_randoms_w(patches_n, vals_n, pc_max)
+        
+    # PCA is deprecated in this implementation
+#    else:
+#        patches_m_pc = get_eigenpatches(patches_m, psize, pc_max)
+#        patches_n_pc = get_eigenpatches(patches_n, psize, pc_max)
+    
+    return patches_m_pc, patches_n_pc, vals_m_pc, vals_n_pc
 
 def create_sliceinfo(images_fn, labels_fn, kernels, i):
     # figure out the biggest slice
@@ -144,6 +187,49 @@ def create_sliceinfo(images_fn, labels_fn, kernels, i):
     
     return SliceInfo(*si_payload)
 
+def create_sliceinfo_w(images_fn, labels_fn, kernels, i):
+    # figure out the biggest slice
+    print("Creating Weighted Slice Info... {}/{}".format(i+1, len(images_fn)))
+    slice_no = find_biggest_slice(path + labels_fn[i])
+    
+    # get the slice, label, and associated orientations
+    slice_im, slice_im_or = get_nifti_slice(path + images_fn[i], slice_no)
+    slice_lb, slice_lb_or = get_nifti_slice(path + labels_fn[i], slice_no)
+    
+    # if crop, we crop the image down
+    if crop:    
+        crop_x, crop_y = crop
+        start_x = slice_im.shape[0] / 2 - crop_x / 2
+        end_x = start_x + crop_x
+        start_y = slice_im.shape[1] / 2 - crop_y / 2
+        end_y = start_y + crop_y
+    
+        slice_im = slice_im[start_x:end_x, start_y:end_y]
+        slice_lb = slice_lb[start_x:end_x, start_y:end_y]
+            
+    # figure out the principal patches
+    pc_payload = (slice_im, slice_lb)
+    patches_m_pc, patches_n_pc, vals_m, vals_n = create_pc_patches_w(*pc_payload)
+    
+    # compute gabor features for the patches
+    feats_m = []
+    feats_n = []
+    for patch in patches_m_pc:
+        feats_m.append(compute_feats(patch, kernels))
+    for patch in patches_n_pc:
+        feats_n.append(compute_feats(patch, kernels))
+    
+    # package it into a SliceInfo object
+    si_payload = (images_fn[i], slice_no, 
+                  slice_im, slice_im_or,
+                  slice_lb, slice_lb_or,
+                  patches_m_pc, patches_n_pc,
+                  feats_m, feats_n,
+                  vals_m, vals_n)
+    
+    
+    return SliceInfo(*si_payload)
+
 def create_sliceinfos(images_fn, labels_fn):
     kernels = generate_kernels() # create gabor kernels
     slice_infos = []    
@@ -157,13 +243,30 @@ def create_sliceinfos(images_fn, labels_fn):
     
     return slice_infos
 
+def create_sliceinfos_w(images_fn, labels_fn):
+    print("Creating weighted Slice Infos...")
+    kernels = generate_kernels() # create gabor kernels
+    slice_infos = []    
+    
+    if len(sys.argv) < 2:
+        for i in range(len(images_fn)):                
+            slice_infos.append(create_sliceinfo_w(images_fn, labels_fn, kernels, i))
+    
+    else:
+        slice_infos = Parallel(n_jobs=int(sys.argv[1]))(delayed(create_sliceinfo_w)(images_fn, labels_fn, kernels, i) for i in range(len(images_fn)))
+    
+    return slice_infos
+
 """
 Gives you flattened training features from every slice except for the ith
 slice, which will be the test slice.
 """
 def generate_training_feats(slice_infos, i):
     train_m = []
-    train_n = []    
+    train_n = []
+
+    labels_m = []    
+    labels_n = []
     
     # go through each slice
     for j in range(len(slice_infos)):
@@ -172,6 +275,10 @@ def generate_training_feats(slice_infos, i):
             continue
         train_m.append(slice_infos[j].feats_m)
         train_n.append(slice_infos[j].feats_n)
+        if slice_infos[j].vals_m != None:
+            labels_m.extend(slice_infos[j].vals_m)
+            labels_n.extend(slice_infos[j].vals_n)
+        
     
     train_m = np.array(train_m)
     train_n = np.array(train_n)
@@ -183,7 +290,10 @@ def generate_training_feats(slice_infos, i):
     train_n = train_n.reshape(tns[0] * tns[1], tns[2] * tns[3])
     
     samples = np.concatenate((train_m, train_n))
-    labels = ['M' for k in train_m] + ['N' for p in train_n]
+    if slice_infos[0].vals_m == None:
+        labels = ['M' for k in train_m] + ['N' for p in train_n]
+    else:
+        labels = labels_m + labels_n
 
     return samples, labels
 
@@ -287,22 +397,38 @@ def check_classify(RF, kernels, patch, patch_label, i, tot):
 # attempts to classify patch i of patches
 def classify_patch(RF, kernels, patches, i):
     # compute the feats of the patch
-    print("Classifying patch {}/{}".format(i, len(patches)))
     patch = patches[i]
     feat = compute_feats(patch, kernels)
     feat = feat.flatten().reshape(1, -1)
     prediction = RF.predict(feat)
+    print("Classifying patch {}/{}: {}".format(i, len(patches), prediction))
     if prediction == 'M':
         return np.ones(patch.shape)
-    else:
+    elif prediction == 'N':
         return np.zeros(patch.shape)
-    
+    else:
+        return np.full(patch.shape, prediction)
+        
+def classify_patch_w(fn, kernels, patches, i):
+    RF = joblib.load(fn)
+    patch = patches[i]
+    feat = compute_feats(patch, kernels)
+    feat = feat.flatten().reshape(1, -1)
+    prediction = RF.predict(feat)
+    print("Classifying patch {}/{}: {}".format(i, len(patches), prediction))
+    if prediction == 'M':
+        return np.ones(patch.shape)
+    elif prediction == 'N':
+        return np.zeros(patch.shape)
+    else:
+        return np.full(patch.shape, prediction)
 
 """
 Generate labels using Random Forest on a particular
 """
 def rf_reconstruct(slice_infos, i):
     feats, labels = generate_training_feats(slice_infos, i)
+    labels = np.array(labels)
     RF = train_rf_classifier(feats, labels, no_trees)
     
     test_sl = slice_infos[i]
@@ -316,9 +442,14 @@ def rf_reconstruct(slice_infos, i):
     patches_a = extract_patches_2d(image, patch_size)
     # _p stands for "predict"
     
+    # dump the RF
+    fn_rf = 'rf.joblib'
+    joblib.dump(RF, fn_rf)
+        
     # check each patch
     if len(sys.argv) >= 2:
-        patches_p = Parallel(n_jobs=int(sys.argv[1]))(delayed(classify_patch)(RF, kernels, patches_a, i) for i in range(len(patches_a)))
+        #patches_p = Parallel(n_jobs=int(sys.argv[1]))(delayed(classify_patch)(RF, kernels, patches_a, i) for i in range(len(patches_a)))
+        patches_p = Parallel(n_jobs=int(sys.argv[1]))(delayed(classify_patch_w)(fn_rf, kernels, patches_a, i) for i in range(len(patches_a)))
             
     else:
         patches_p = []
@@ -337,10 +468,11 @@ def rf_reconstruct(slice_infos, i):
 Threshold a reconstructed image by pushing numbers below value down to 0 and
 numbers equal to or above value up to 1.
 """
-def threshold(image, value):
+def threshold(image, value, round=None):
     threshold = np.array(image) # make a copy
     threshold[threshold < value] = 0
-    #threshold[threshold >= value] = 1
+    if round:
+        threshold[threshold >= value] = 1
     return threshold
 
 """
@@ -349,7 +481,22 @@ Uses the label to mask out the image.
 def mask_out(image, label):
     mask = np.where(label == 0, -1000, image)
     return mask
-   
+
+def compare_im(recons_im, real_lb, display=False):
+    if display:
+        plt.imshow(recons_im)
+        plt.show()
+        
+        plt.imshow(real_lb)
+        plt.show()
+    
+    recons_dice = recons_im.astype(int)
+    label_dice = real_lb.astype(int)
+    dice = float(2*np.count_nonzero(recons_dice & label_dice))/(np.count_nonzero(recons_dice)
+    + np.count_nonzero(label_dice))
+
+    return dice
+    
 def run():
     if generate:
         t0 = time()
@@ -357,14 +504,19 @@ def run():
         images_fn, labels_fn = get_filenames(path, lb_name)    
         
         # generate sliceinfos for all those images
-        slice_infos = create_sliceinfos(images_fn, labels_fn)
+        if generate == 1:
+            slice_infos = create_sliceinfos(images_fn, labels_fn)
+        elif generate == 2:
+            slice_infos = create_sliceinfos_w(images_fn, labels_fn)
+            print(slice_infos[0].vals_m[:30])
+
         
         dt = time() - t0
         print("Finished in %.2f seconds." % dt)
         
         # save the slice info
         with open(pickle, 'wb') as f:
-            dill.dump(slice_infos, f)
+            dill.dump(slice_infos, f)        
     
     else:
         with open(pickle, 'rb') as f:
@@ -407,16 +559,108 @@ def run():
     elif classify == 4: # show the reconstruct for one slice
         with open(recons, 'rb') as f:
             recons_im = dill.load(f)
+
+        real_lb = slice_infos[fullspec_i].slice_lb        
         
-        plt.imshow(threshold(recons_im, 0.66))
-        plt.show()
+        for threshval in range(0, 101):
+            threshval = threshval / 100.0
+            recons_th = threshold(recons_im, threshval, True)
+            print("%.2f" % threshval, "%.2f" % compare_im(recons_th, real_lb))
+
+def bigtest():
+    # really long test to generate SliceInfos at all radiuses
+    
+    images_fn, labels_fn = get_filenames(path, lb_name)    
+    
+    # go through all candidate psizes
+    for p in psizes:
+        global psize
+        psize = p
+        t0 = time()
+        slice_infos = create_sliceinfos_w(images_fn, labels_fn)
+        dt = time() - t0
+        print("Finished in %.2f seconds." % dt)
+         
+        # save the slice info
+        with open("slice_infos_" + str(psize) + ".pkl", 'wb') as f:
+            dill.dump(slice_infos, f)   
+            
+def bigtest2():
+    
+    for radius in range(10, 21): # go through each SliceInfo
+        global fullspec_i
+        global recons
+        with open("slice_infos_" + str(radius) + ".pkl") as f:
+            slice_infos = dill.load(f)
+        for x in range(18, 35):
+            fullspec_i = x
+            recons = "recons_" + str(radius) + "_" + str(fullspec_i) + ".pkl"
+            rf_reconstruct(slice_infos, fullspec_i)
+
+def get_all_similarities(repath):
+    similarities = {}
+    for fn in sorted(os.listdir(repath)):
+        sep = fn.split('.')[0].split('_')
+        radius = int(sep[1])
+        if similarities.get(radius) == None:
+            similarities[radius] = []    
+        with open(repath + fn, 'rb') as f:
+            similarities[radius].append(dill.load(f))
+    
+    #plt.imshow(similarities[10][0])
+
+    rad_sims = []    
+    
+    # generate similarity index for each image
+    for radius in sorted(similarities.keys()):
         
-        plt.imshow(slice_infos[fullspec_i].slice_lb)
-        plt.show()
+        print("Radius: ", radius)
+        
+        with open("slice_infos_" + str(radius) + ".pkl", 'rb') as f:
+            slice_infos = dill.load(f)
+
+        slice_sims = []        
+        
+        for index, recons_im in enumerate(similarities[radius]):
+            # load the real label
+            real_lb = slice_infos[index].slice_lb
+            
+            print("Slice: ", index)
+
+            thresh_sims = []                        
+            # go through all possible thresholds
+            for threshval in range(0, 101):
+                threshval = threshval / 100.0
+                
+                # mask the generated recons_im to a specific threshval
+                recons_th = threshold(recons_im, threshval, True)
+                
+                # Compare them
+                compare_val = compare_im(recons_th, real_lb)
+                thresh_sims.append(compare_val)
+            
+            slice_sims.append(thresh_sims)
+        
+        rad_sims.append(slice_sims)
+    
+    # pull the means
+    emp = []
+    for i in range(len(rad_sims)):
+        emp.append(np.array(rad_sims)[i].mean(axis=0))
+    
+    with open("similarities.pkl", 'wb') as f:
+        dill.dump(rad_sims, f)
+        
+    np.savetext("emp.csv", np.array(emp), delimiter=",")
+        
+    
+def bulk_rename(repath):
+    for fn in sorted(os.listdir(repath)):
+        if len(fn) == 15:
+            os.rename(repath + "/" + fn, repath + "/" + fn[:10] + '0' + fn[10:])
     
         
-        
-
-        
 if __name__ == "__main__": # only run if it's the main module
-    run()
+    #get_all_similarities("recons/")
+    bigtest2()
+    pass
