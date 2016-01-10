@@ -23,7 +23,7 @@ import os
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_extraction.image import extract_patches_2d
 from sklearn.feature_extraction.image import reconstruct_from_patches_2d
-
+from skimage.feature import hog
 
 # Helpers
 from helper_io import get_filenames, find_biggest_slice, get_nifti_slice
@@ -32,8 +32,9 @@ from helper_gabor import generate_kernels, compute_feats
 
 # CONSTANTS
 path = "ct/" # path to the CTs and the associated labels
-lb_name = "CTV" # string used to select the labels
-psize = 13 # patch "radius", so the patch dimensions are psize x psize
+im_name = "CT.nii.gz" # string used to select the images
+lb_name = "CT_BLADDER.nii.gz" # string used to select the labels
+psize = 12 # patch "radius", so the patch dimensions are psize x psize
 # how many "principal component" patches to generate per slice per class
 # for example, 10 will result in 10 PC patches for masked, 10 PC patches
 # for non-masked regions.
@@ -41,17 +42,17 @@ pc_max = 500
 ct_cap_min = -1000 # minimum CT brightness (set ct_cap_max for no clipping)
 ct_cap_max = 2000 # maximum CT brightness (set to 0 for no clipping)
 ct_monte = 1 # 1 will use random patches; 0 will use PCA patches
-pickle = "slice_infos.pkl" # path and filename to save the SliceInfos
-recons = "test_recons.pkl" # path and filename to store the patches of reconstruction
+pickle = "slice_infos_12.pkl" # path and filename to save the SliceInfos
+recons = "recons_12_3.pkl" # path and filename to store the patches of reconstruction
 generate = 0 # toggle generation of new SliceInfos
 classify = 0 # test classification engine
 no_trees = 10 # number of trees to use for classifier
-fullspec_i = 2
+fullspec_i = 3
 crop = (128, 128)
 np.seterr(all='ignore')
 
 # BIGTEST CONSTANTS
-psizes = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+psizes = [12]
 
 
 class SliceInfo():
@@ -187,9 +188,14 @@ def create_sliceinfo(images_fn, labels_fn, kernels, i):
     
     return SliceInfo(*si_payload)
 
+def compute_hogs(patch):
+    fd, hog_im = hog(patch, orientations=8, pixels_per_cell=(4, 4), 
+                     cells_per_block=(1, 1), visualise=True)
+    return fd
+
 def create_sliceinfo_w(images_fn, labels_fn, kernels, i):
     # figure out the biggest slice
-    print("Creating Weighted Slice Info... {}/{}".format(i+1, len(images_fn)))
+    print("Creating Weighted Slice Info... {}/{}: {}".format(i+1, len(images_fn), labels_fn[i]))
     slice_no = find_biggest_slice(path + labels_fn[i])
     
     # get the slice, label, and associated orientations
@@ -216,8 +222,10 @@ def create_sliceinfo_w(images_fn, labels_fn, kernels, i):
     feats_n = []
     for patch in patches_m_pc:
         feats_m.append(compute_feats(patch, kernels))
+        feats_m.append(compute_hogs(patch))
     for patch in patches_n_pc:
         feats_n.append(compute_feats(patch, kernels))
+        feats_n.append(compute_hogs(patch))
     
     # package it into a SliceInfo object
     si_payload = (images_fn[i], slice_no, 
@@ -501,7 +509,7 @@ def run():
     if generate:
         t0 = time()
         # get lists of files to process
-        images_fn, labels_fn = get_filenames(path, lb_name)    
+        images_fn, labels_fn = get_filenames(path, im_name, lb_name)    
         
         # generate sliceinfos for all those images
         if generate == 1:
@@ -562,15 +570,37 @@ def run():
 
         real_lb = slice_infos[fullspec_i].slice_lb        
         
-        for threshval in range(0, 101):
-            threshval = threshval / 100.0
-            recons_th = threshold(recons_im, threshval, True)
-            print("%.2f" % threshval, "%.2f" % compare_im(recons_th, real_lb))
+#        for threshval in range(0, 101):
+#            threshval = threshval / 100.0
+#            recons_th = threshold(recons_im, threshval, True)
+#            print("%.2f" % threshval, "%.2f" % compare_im(recons_th, real_lb))
+        
+        recons_th = threshold(recons_im, 0.45, True)
+        compare_im(recons_th, real_lb, True)
+
+def plot_save_comparisons():
+    with open(pickle, 'rb') as f:
+        slice_infos = dill.load(f)
+    
+    # go through each case
+    for i in range(0, 35):
+        with open("recons_bladder/recons_12_" + str(i) + ".pkl", 'rb') as f:
+            recons_im = dill.load(f)
+            recons_th = threshold(recons_im, 0.50, True)
+        real_lb = slice_infos[i].slice_lb
+        # plot each
+        plt.figure()
+        plt.subplot(1, 2, 1)
+        plt.imshow(recons_th)
+        plt.subplot(1, 2, 2)
+        plt.imshow(real_lb)
+        plt.savefig('compares_bladder/case_' + str(i) + '.png')
+                
 
 def bigtest():
     # really long test to generate SliceInfos at all radiuses
     
-    images_fn, labels_fn = get_filenames(path, lb_name)    
+    images_fn, labels_fn = get_filenames(path, im_name, lb_name)    
     
     # go through all candidate psizes
     for p in psizes:
@@ -587,12 +617,12 @@ def bigtest():
             
 def bigtest2():
     
-    for radius in range(10, 21): # go through each SliceInfo
+    for radius in [12]: # go through each SliceInfo
         global fullspec_i
         global recons
         with open("slice_infos_" + str(radius) + ".pkl") as f:
             slice_infos = dill.load(f)
-        for x in range(18, 35):
+        for x in range(0, 35):
             fullspec_i = x
             recons = "recons_" + str(radius) + "_" + str(fullspec_i) + ".pkl"
             rf_reconstruct(slice_infos, fullspec_i)
@@ -651,7 +681,7 @@ def get_all_similarities(repath):
     with open("similarities.pkl", 'wb') as f:
         dill.dump(rad_sims, f)
         
-    np.savetext("emp.csv", np.array(emp), delimiter=",")
+    np.savetxt("emp.csv", np.array(emp), delimiter=",")
         
     
 def bulk_rename(repath):
@@ -661,6 +691,9 @@ def bulk_rename(repath):
     
         
 if __name__ == "__main__": # only run if it's the main module
-    #get_all_similarities("recons/")
-    bigtest2()
+    #get_all_similarities("recons_bladder/")
+    #bigtest2()
+    #run()
+    #plot_save_comparisons()
+    bigtest()
     pass
