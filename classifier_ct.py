@@ -638,15 +638,19 @@ def plot_save_comparisons():
             recons_th = threshold(recons_im, 0.35, True)
         real_lb = slice_infos[i].slice_lb
         # plot each
-        plt.figure()
-        plt.subplot(2, 2, 1)
+        plt.figure(figsize=(8,8))
+        plt.subplot(3, 2, 1)
+        plt.imshow(slice_infos[i].slice_im)
+        plt.subplot(3, 2, 2)
+        plt.imshow(slice_infos[i].slice_im)
+        plt.subplot(3, 2, 3)
         plt.imshow(recons_th)
-        plt.subplot(2, 2, 2)
+        plt.subplot(3, 2, 4)
         plt.imshow(real_lb)
-        plt.subplot(2, 2, 3)
-        plt.imshow(mask_out(slice_infos[i].slice_im, recons_th))
-        plt.subplot(2, 2, 4)
-        plt.imshow(mask_out(slice_infos[i].slice_im, real_lb))
+        plt.subplot(3, 2, 5)
+        plt.imshow(mask_out(slice_infos[i].slice_im, recons_th), cmap=plt.cm.gray)
+        plt.subplot(3, 2, 6)
+        plt.imshow(mask_out(slice_infos[i].slice_im, real_lb), cmap=plt.cm.gray)
         plt.savefig('compares_bladder_hog/case_' + str(i) + '.png')
                 
 
