@@ -633,27 +633,42 @@ def run():
 def plot_save_comparisons():
     with open(pickle, 'rb') as f:
         slice_infos = dill.load(f)
+        
+    threshv = 0.35
     
     # go through each case
     for i in range(0, 35):
         with open("recons_bladder_hog/recons_12_" + str(i) + ".pkl", 'rb') as f:
             recons_im = dill.load(f)
-            recons_th = threshold(recons_im, 0.35, True)
-            recons_tv = threshold(recons_im, 0.35)
+            recons_th = threshold(recons_im, threshv, True)
+            recons_tv = threshold(recons_im, threshv)
         real_lb = slice_infos[i].slice_lb
         # plot each
-        plt.figure(figsize=(8,8))
-        plt.subplot(3, 2, 1)
+        plt.figure(figsize=(8,12))
+        plt.subplot(4, 1, 1)
+        plt.title("Bladder Reconstructions with HOG at Threshold {}, Case {}".format(threshv,i))
+        plt.axis('off')
+        plt.subplot(4, 2, 3)
+        plt.axis('off')
         plt.imshow(slice_infos[i].slice_im, cmap=plt.cm.gray)
-        plt.subplot(3, 2, 2)
+        plt.subplot(4, 2, 4)
+        plt.axis('off')
+
         plt.imshow(slice_infos[i].slice_im, cmap=plt.cm.gray)
-        plt.subplot(3, 2, 3)
+        plt.subplot(4, 2, 5)
+        plt.axis('off')
+
         plt.imshow(recons_tv)
-        plt.subplot(3, 2, 4)
+        plt.subplot(4, 2, 6)
+        plt.axis('off')
+
         plt.imshow(real_lb)
-        plt.subplot(3, 2, 5)
+        plt.subplot(4, 2, 7)
+        plt.axis('off')
+
         plt.imshow(mask_out(slice_infos[i].slice_im, recons_th), cmap=plt.cm.gray)
-        plt.subplot(3, 2, 6)
+        plt.subplot(4, 2, 8)
+        plt.axis('off')
         plt.imshow(mask_out(slice_infos[i].slice_im, real_lb), cmap=plt.cm.gray)
         plt.savefig('compares_bladder_hog/case_' + str(i) + '.png')
                 
