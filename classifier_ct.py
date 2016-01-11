@@ -61,7 +61,8 @@ class SliceInfo():
                  slice_lb, slice_lb_or,
                  patches_m_pc, patches_n_pc,
                  feats_m, feats_n,
-                 vals_m=None, vals_n=None):
+                 vals_m=None, vals_n=None,
+                 hogs_m=None, hogs_n=None):
         self.filename = filename
         self.slice_no = slice_no
         
@@ -74,6 +75,9 @@ class SliceInfo():
         self.patches_n_pc = patches_n_pc
         self.feats_m = feats_m
         self.feats_n = feats_n
+        
+        self.hogs_m = hogs_m
+        self.hogs_n = hogs_n
         
         self.vals_m = vals_m
         self.vals_n = vals_n
@@ -89,6 +93,12 @@ class SliceInfo():
         print("Unmasked Patches: ", np.array(self.patches_n_pc).shape)
         print("Masked Features: ", np.array(self.feats_m).shape)
         print("Unmasked Features: ", np.array(self.feats_n).shape)
+        print("Masked Values Shape: ", np.array(self.vals_m).shape)
+        print("Unmasked Values Shape: ", np.array(self.vals_n).shape)
+        if self.hogs_m:
+            print("Masked HOGs: ", np.array(self.hogs_m).shape)
+        if self.hogs_n:
+            print("Unmasked HOGs: ", np.array(self.hogs_n).shape)
         if self.vals_m:
             print("Masked Values: ", self.vals_m)
         if self.vals_n:
@@ -220,12 +230,14 @@ def create_sliceinfo_w(images_fn, labels_fn, kernels, i):
     # compute gabor features for the patches
     feats_m = []
     feats_n = []
+    hogs_m = []
+    hogs_n = []
     for patch in patches_m_pc:
         feats_m.append(compute_feats(patch, kernels))
-        feats_m.append(compute_hogs(patch))
+        hogs_m.append(compute_hogs(patch))
     for patch in patches_n_pc:
         feats_n.append(compute_feats(patch, kernels))
-        feats_n.append(compute_hogs(patch))
+        hogs_n.append(compute_hogs(patch))
     
     # package it into a SliceInfo object
     si_payload = (images_fn[i], slice_no, 
@@ -233,7 +245,8 @@ def create_sliceinfo_w(images_fn, labels_fn, kernels, i):
                   slice_lb, slice_lb_or,
                   patches_m_pc, patches_n_pc,
                   feats_m, feats_n,
-                  vals_m, vals_n)
+                  vals_m, vals_n,
+                  hogs_m, hogs_n)
     
     
     return SliceInfo(*si_payload)
@@ -276,6 +289,9 @@ def generate_training_feats(slice_infos, i):
     labels_m = []    
     labels_n = []
     
+    hogs_m = []
+    hogs_n = []
+    
     # go through each slice
     for j in range(len(slice_infos)):
         # if it's the ith slice, don't include it in the training
@@ -286,16 +302,35 @@ def generate_training_feats(slice_infos, i):
         if slice_infos[j].vals_m != None:
             labels_m.extend(slice_infos[j].vals_m)
             labels_n.extend(slice_infos[j].vals_n)
-        
+        if slice_infos[j].hogs_m != None:
+            hogs_m.append(slice_infos[j].hogs_m)
+            hogs_n.append(slice_infos[j].hogs_n)
     
     train_m = np.array(train_m)
-    train_n = np.array(train_n)
+    train_n = np.array(train_n) 
+    hogs_m = np.array(hogs_m)
+    hogs_n = np.array(hogs_n)    
     
     tms = train_m.shape
     tns = train_n.shape
+    hms = hogs_m.shape
+    hns = hogs_n.shape
+    
+    print(tms, tns)
+    print(hms, hns)
     
     train_m = train_m.reshape(tms[0] * tms[1], tms[2] * tms[3])
     train_n = train_n.reshape(tns[0] * tns[1], tns[2] * tns[3])
+    hogs_m = hogs_m.reshape(hms[0] * hms[1], hms[2])
+    hogs_n = hogs_n.reshape(hns[0] * hns[1], hns[2])
+    
+    train_m = np.concatenate((train_m, hogs_m), axis=1)
+    train_n = np.concatenate((train_n, hogs_n), axis=1)
+    
+    print(train_m.shape, train_n.shape)
+    #print(hogs_m.shape, hogs_n.shape)    
+    
+    #raise Exception
     
     samples = np.concatenate((train_m, train_n))
     if slice_infos[0].vals_m == None:
@@ -422,6 +457,10 @@ def classify_patch_w(fn, kernels, patches, i):
     patch = patches[i]
     feat = compute_feats(patch, kernels)
     feat = feat.flatten().reshape(1, -1)
+    hogs = compute_hogs(patch)
+    hogs = hogs.flatten().reshape(1, -1)
+    feat = np.concatenate((feat, hogs), axis=1)
+    
     prediction = RF.predict(feat)
     print("Classifying patch {}/{}: {}".format(i, len(patches), prediction))
     if prediction == 'M':
@@ -620,7 +659,7 @@ def bigtest2():
     for radius in [12]: # go through each SliceInfo
         global fullspec_i
         global recons
-        with open("slice_infos_" + str(radius) + ".pkl") as f:
+        with open("slice_infos_" + str(radius) + ".pkl", 'rb') as f:
             slice_infos = dill.load(f)
         for x in range(0, 35):
             fullspec_i = x
@@ -692,8 +731,8 @@ def bulk_rename(repath):
         
 if __name__ == "__main__": # only run if it's the main module
     #get_all_similarities("recons_bladder/")
-    #bigtest2()
+    bigtest2()
     #run()
     #plot_save_comparisons()
-    bigtest()
+    #bigtest()
     pass
