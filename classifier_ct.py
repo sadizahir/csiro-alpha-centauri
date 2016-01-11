@@ -104,7 +104,17 @@ class SliceInfo():
         if self.vals_n:
             print("Unmasked Values: ", self.vals_n)
         
+"""
+Given an MRI-slice image and its associated label image, generate "principal
+component" patches.
 
+This is done by first (optionally) pre-processing the image to cap maximum
+brightness values (ct_cap_min and ct_cap_max) to remove the presence of bright
+seeds on the image if they're there.
+
+Then, the image is separated into masked and non-masked patches. The masked
+patches represent patches of the image which correlate to 
+"""
 def create_pc_patches(slice_im, slice_lb):
     # for CT, cap the image
     if ct_cap_max:
@@ -623,17 +633,21 @@ def plot_save_comparisons():
     
     # go through each case
     for i in range(0, 35):
-        with open("recons_bladder/recons_12_" + str(i) + ".pkl", 'rb') as f:
+        with open("recons_bladder_hog/recons_12_" + str(i) + ".pkl", 'rb') as f:
             recons_im = dill.load(f)
-            recons_th = threshold(recons_im, 0.50, True)
+            recons_th = threshold(recons_im, 0.35, True)
         real_lb = slice_infos[i].slice_lb
         # plot each
         plt.figure()
-        plt.subplot(1, 2, 1)
+        plt.subplot(2, 2, 1)
         plt.imshow(recons_th)
-        plt.subplot(1, 2, 2)
+        plt.subplot(2, 2, 2)
         plt.imshow(real_lb)
-        plt.savefig('compares_bladder/case_' + str(i) + '.png')
+        plt.subplot(2, 2, 3)
+        plt.imshow(mask_out(slice_infos[i].slice_im, recons_th))
+        plt.subplot(2, 2, 4)
+        plt.imshow(mask_out(slice_infos[i].slice_im, real_lb))
+        plt.savefig('compares_bladder_hog/case_' + str(i) + '.png')
                 
 
 def bigtest():
@@ -731,8 +745,8 @@ def bulk_rename(repath):
         
 if __name__ == "__main__": # only run if it's the main module
     #get_all_similarities("recons_bladder/")
-    bigtest2()
+    #bigtest2()
     #run()
-    #plot_save_comparisons()
+    plot_save_comparisons()
     #bigtest()
     pass
