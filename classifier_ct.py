@@ -54,7 +54,10 @@ np.seterr(all='ignore')
 # BIGTEST CONSTANTS
 psizes = [12]
 
-
+"""
+Class to contain all the training data from a slice extracted from a 3D MRI.
+Consists of the filename of the slice, the "number" of the slice (i.e. the )
+"""
 class SliceInfo():
     def __init__(self, filename, slice_no,
                  slice_im, slice_im_or,
@@ -636,15 +639,16 @@ def plot_save_comparisons():
         with open("recons_bladder_hog/recons_12_" + str(i) + ".pkl", 'rb') as f:
             recons_im = dill.load(f)
             recons_th = threshold(recons_im, 0.35, True)
+            recons_tv = threshold(recons_im, 0.35)
         real_lb = slice_infos[i].slice_lb
         # plot each
         plt.figure(figsize=(8,8))
         plt.subplot(3, 2, 1)
-        plt.imshow(slice_infos[i].slice_im)
+        plt.imshow(slice_infos[i].slice_im, cmap=plt.cm.gray)
         plt.subplot(3, 2, 2)
-        plt.imshow(slice_infos[i].slice_im)
+        plt.imshow(slice_infos[i].slice_im, cmap=plt.cm.gray)
         plt.subplot(3, 2, 3)
-        plt.imshow(recons_th)
+        plt.imshow(recons_tv)
         plt.subplot(3, 2, 4)
         plt.imshow(real_lb)
         plt.subplot(3, 2, 5)
