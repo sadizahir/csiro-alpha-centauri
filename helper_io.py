@@ -116,13 +116,13 @@ path back in later if you want to actually open the files.
 
 get_filenames(str) --> (list[str], list[str])
 """
-def get_filenames(path, label_filter):
+def get_filenames(path, image_filter, label_filter):
     images_fn = []
     labels_fn = []
     for fn in sorted(os.listdir(path)):
         if label_filter in fn:
             labels_fn.append(fn)
-        else:
+        elif image_filter in fn:
             images_fn.append(fn)
     return images_fn, labels_fn
 
