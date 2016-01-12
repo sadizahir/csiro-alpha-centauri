@@ -33,7 +33,7 @@ from helper_gabor import generate_kernels, compute_feats
 # CONSTANTS
 path = "ct/" # path to the CTs and the associated labels
 im_name = "CT.nii.gz" # string used to select the images
-lb_name = "CT_BLADDER.nii.gz" # string used to select the labels
+lb_name = "CT_CTV.nii.gz" # string used to select the labels
 psize = 12 # patch "radius", so the patch dimensions are psize x psize
 # how many "principal component" patches to generate per slice per class
 # for example, 10 will result in 10 PC patches for masked, 10 PC patches
@@ -56,7 +56,11 @@ psizes = [12]
 
 """
 Class to contain all the training data from a slice extracted from a 3D MRI.
-Consists of the filename of the slice, the "number" of the slice (i.e. the )
+Consists of the filename of the slice, the "number" of the slice (i.e. the 
+index of the slice in the 3D MRI), the original slice image, the associated
+label image, their orientations, masked/unmasked: patches, gabor features,
+HOG features, and "percentage values"; the percentage of label in that
+particular patch.
 """
 class SliceInfo():
     def __init__(self, filename, slice_no,
@@ -634,43 +638,45 @@ def plot_save_comparisons():
     with open(pickle, 'rb') as f:
         slice_infos = dill.load(f)
         
-    threshv = 0.35
+    threshv = 0.50
     
     # go through each case
     for i in range(0, 35):
-        with open("recons_bladder_hog/recons_12_" + str(i) + ".pkl", 'rb') as f:
+        with open("recons_ctv/recons_12_" + str(i) + ".pkl", 'rb') as f:
             recons_im = dill.load(f)
             recons_th = threshold(recons_im, threshv, True)
             recons_tv = threshold(recons_im, threshv)
         real_lb = slice_infos[i].slice_lb
+        if ct_cap_max:
+            slice_im = np.clip(slice_infos[i].slice_im, ct_cap_min, ct_cap_max)
         # plot each
         plt.figure(figsize=(8,12))
-        plt.subplot(4, 1, 1)
-        plt.title("Bladder Reconstructions with HOG at Threshold {}, Case {}".format(threshv,i))
+        #plt.subplot(4, 1, 1)
+        plt.suptitle("Prostate Reconstructions with HOG at Threshold {}, Case {}".format(threshv,i))
         plt.axis('off')
-        plt.subplot(4, 2, 3)
+        plt.subplot(3, 2, 1)
         plt.axis('off')
-        plt.imshow(slice_infos[i].slice_im, cmap=plt.cm.gray)
-        plt.subplot(4, 2, 4)
+        plt.imshow(slice_im, cmap=plt.cm.gray)
+        plt.subplot(3, 2, 2)
         plt.axis('off')
 
-        plt.imshow(slice_infos[i].slice_im, cmap=plt.cm.gray)
-        plt.subplot(4, 2, 5)
+        plt.imshow(slice_im, cmap=plt.cm.gray)
+        plt.subplot(3, 2, 3)
         plt.axis('off')
 
         plt.imshow(recons_tv)
-        plt.subplot(4, 2, 6)
+        plt.subplot(3, 2, 4)
         plt.axis('off')
 
         plt.imshow(real_lb)
-        plt.subplot(4, 2, 7)
+        plt.subplot(3, 2, 5)
         plt.axis('off')
 
-        plt.imshow(mask_out(slice_infos[i].slice_im, recons_th), cmap=plt.cm.gray)
-        plt.subplot(4, 2, 8)
+        plt.imshow(mask_out(slice_im, recons_th), cmap=plt.cm.gray)
+        plt.subplot(3, 2, 6)
         plt.axis('off')
-        plt.imshow(mask_out(slice_infos[i].slice_im, real_lb), cmap=plt.cm.gray)
-        plt.savefig('compares_bladder_hog/case_' + str(i) + '.png')
+        plt.imshow(mask_out(slice_im, real_lb), cmap=plt.cm.gray)
+        plt.savefig('compares_ctv/case_' + str(i) + '.png')
                 
 
 def bigtest():
