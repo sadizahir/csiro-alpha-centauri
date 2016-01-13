@@ -27,7 +27,7 @@ from skimage.feature import hog
 
 # Helpers
 from helper_io import get_filenames, find_biggest_slice, get_nifti_slice
-from helper_eigen import extract_roi_patches, extract_roi_patches_w, get_randoms, get_randoms_w, get_eigenpatches
+from helper_eigen import extract_roi_patches_w, get_randoms_w
 from helper_gabor import generate_kernels, compute_feats
 
 # CONSTANTS
@@ -112,42 +112,138 @@ class SliceInfo():
             print("Unmasked Values: ", self.vals_n)
         
 """
-Given an MRI-slice image and its associated label image, generate "principal
-component" patches.
-
-This is done by first (optionally) pre-processing the image to cap maximum
-brightness values (ct_cap_min and ct_cap_max) to remove the presence of bright
-seeds on the image if they're there.
-
-Then, the image is separated into masked and non-masked patches. The masked
-patches represent patches of the image which correlate to 
+Deprecated.
 """
-def create_pc_patches(slice_im, slice_lb):
-    # for CT, cap the image
-    if ct_cap_max:
-        slice_im = np.clip(slice_im, ct_cap_min, ct_cap_max)
-    
-    # extract all of the patches
-    # _m means "masked" patches, i.e. patches that are in the ROI
-    # _n means "non-masked" patches, i.e. patches that aren't in the ROI
-    patches_m, patches_n = extract_roi_patches(slice_im, slice_lb, psize)
-
-    # use random patches to represent an image
-    if ct_monte:
-        # _m_pc means "masked" "principal components"
-        # _n_pc means "non-masked" "principal components"
-        patches_m_pc = get_randoms(patches_m, pc_max)
-        patches_n_pc = get_randoms(patches_n, pc_max)
-        
-    # generate eigenpatches using PCA
-    else:
-        patches_m_pc = get_eigenpatches(patches_m, psize, pc_max)
-        patches_n_pc = get_eigenpatches(patches_n, psize, pc_max)
-    
-    return patches_m_pc, patches_n_pc
+#def create_pc_patches(slice_im, slice_lb):
+#    # for CT, cap the image
+#    if ct_cap_max:
+#        slice_im = np.clip(slice_im, ct_cap_min, ct_cap_max)
+#    
+#    # extract all of the patches
+#    # _m means "masked" patches, i.e. patches that are in the ROI
+#    # _n means "non-masked" patches, i.e. patches that aren't in the ROI
+#    patches_m, patches_n = extract_roi_patches(slice_im, slice_lb, psize)
+#
+#    # use random patches to represent an image
+#    if ct_monte:
+#        # _m_pc means "masked" "principal components"
+#        # _n_pc means "non-masked" "principal components"
+#        patches_m_pc = get_randoms(patches_m, pc_max)
+#        patches_n_pc = get_randoms(patches_n, pc_max)
+#        
+#    # generate eigenpatches using PCA
+#    else:
+#        patches_m_pc = get_eigenpatches(patches_m, psize, pc_max)
+#        patches_n_pc = get_eigenpatches(patches_n, psize, pc_max)
+#    
+#    return patches_m_pc, patches_n_pc
 
 """
-Weighted versions of the PC patches from previously.
+Deprecated.
+"""
+#def create_sliceinfo(images_fn, labels_fn, kernels, i):
+#    # figure out the biggest slice
+#    slice_no = find_biggest_slice(path + labels_fn[i])
+#    
+#    # get the slice, label, and associated orientations
+#    slice_im, slice_im_or = get_nifti_slice(path + images_fn[i], slice_no)
+#    slice_lb, slice_lb_or = get_nifti_slice(path + labels_fn[i], slice_no)
+#    
+#    # if crop, we crop the image down
+#    if crop:    
+#        crop_x, crop_y = crop
+#        start_x = slice_im.shape[0] / 2 - crop_x / 2
+#        end_x = start_x + crop_x
+#        start_y = slice_im.shape[1] / 2 - crop_y / 2
+#        end_y = start_y + crop_y
+#    
+#        slice_im = slice_im[start_x:end_x, start_y:end_y]
+#        slice_lb = slice_lb[start_x:end_x, start_y:end_y]
+#            
+#    # figure out the principal patches
+#    pc_payload = (slice_im, slice_lb)
+#    patches_m_pc, patches_n_pc = create_pc_patches(*pc_payload)
+#    
+#    # compute gabor features for the patches
+#    feats_m = []
+#    feats_n = []
+#    for patch in patches_m_pc:
+#        feats_m.append(compute_feats(patch, kernels))
+#    for patch in patches_n_pc:
+#        feats_n.append(compute_feats(patch, kernels))
+#    
+#    # package it into a SliceInfo object
+#    si_payload = (images_fn[i], slice_no, 
+#                  slice_im, slice_im_or,
+#                  slice_lb, slice_lb_or,
+#                  patches_m_pc, patches_n_pc,
+#                  feats_m, feats_n)
+#    
+#    return SliceInfo(*si_payload)
+
+"""
+Deprecated.
+"""
+#def create_sliceinfos(images_fn, labels_fn):
+#    kernels = generate_kernels() # create gabor kernels
+#    slice_infos = []    
+#    
+#    if len(sys.argv) < 2:
+#        for i in range(len(images_fn)):                
+#            slice_infos.append(create_sliceinfo(images_fn, labels_fn, kernels, i))
+#    
+#    else:
+#        slice_infos = Parallel(n_jobs=int(sys.argv[1]))(delayed(create_sliceinfo)(images_fn, labels_fn, kernels, i) for i in range(len(images_fn)))
+#    
+#    return slice_infos
+
+"""
+Given an image (most likely a small patch), generates HOG features for that
+image. Returns a list of numbers.
+
+In this release, the HOG features have fixed parameters. In the future, they
+will be modifiable through global constants.
+"""
+def compute_hogs(patch):
+    fd, hog_im = hog(patch, orientations=8, pixels_per_cell=(4, 4), 
+                     cells_per_block=(1, 1), visualise=True)
+    return fd
+
+"""
+Given an image and associated label, generate the "principal component patches"
+of the image separated into two separate groups: masked and unmasked PCPs.
+
+A tuple of four sets is returned: masked PCPs, unmasked PCPs, masked values,
+and unmasked values. The explanations for "PCP" and "value" are described
+below.
+
+The image is (optionally) preprocessed if ct_cap_max is set to clip the
+brightness values of the pixels to the range [ct_cap_min, ct_cap_max]. This
+is generally done to filter out extremely bright seeds that appear in
+prostate CT scans.
+
+The masked and unmasked patches are created from a function call (see
+"extract_roi_patches_w"). Masked patches are described as patches of the
+image which have at least one pixel that is "pixel of interest". The pixel
+of interest is defined as a pixel whose associated pixel in the label image is
+high/bright/1. In addition, each patch also has a "value", which describes
+the percentage of pixels of interest in that patch as a decimal (i.e. between
+0 and 1).
+
+All the masked and unmasked patches are reduced into a "principal component"
+set, which is a random selection of the existing masked and unmasked patches.
+The number of random patches selected is defined by the constant pc_max. The
+number of random patches is guaranteed and thus the number of unmasked and
+masked PCPs will always be equal. If ct_max exceeds the number of patches 
+available in the selection pool of all masked/unmasked patches, patches will be
+duplicated to fill out the required ct_max PCPs. So if ct_max = 500 and you
+only have 30 masked patches available, the 30 will be approximately repeated
+across the 500 PCPs produced.
+
+By extension, the PCPs may have duplicates even if the available patches exceed
+ct_max. This is because the RNG doesn't check if an existing patch has already
+been added to the PCP record, so the RNG may produce the same patch multiple
+times.
 """
 def create_pc_patches_w(slice_im, slice_lb):
     # for CT, cap the image
@@ -175,50 +271,6 @@ def create_pc_patches_w(slice_im, slice_lb):
     
     return patches_m_pc, patches_n_pc, vals_m_pc, vals_n_pc
 
-def create_sliceinfo(images_fn, labels_fn, kernels, i):
-    # figure out the biggest slice
-    slice_no = find_biggest_slice(path + labels_fn[i])
-    
-    # get the slice, label, and associated orientations
-    slice_im, slice_im_or = get_nifti_slice(path + images_fn[i], slice_no)
-    slice_lb, slice_lb_or = get_nifti_slice(path + labels_fn[i], slice_no)
-    
-    # if crop, we crop the image down
-    if crop:    
-        crop_x, crop_y = crop
-        start_x = slice_im.shape[0] / 2 - crop_x / 2
-        end_x = start_x + crop_x
-        start_y = slice_im.shape[1] / 2 - crop_y / 2
-        end_y = start_y + crop_y
-    
-        slice_im = slice_im[start_x:end_x, start_y:end_y]
-        slice_lb = slice_lb[start_x:end_x, start_y:end_y]
-            
-    # figure out the principal patches
-    pc_payload = (slice_im, slice_lb)
-    patches_m_pc, patches_n_pc = create_pc_patches(*pc_payload)
-    
-    # compute gabor features for the patches
-    feats_m = []
-    feats_n = []
-    for patch in patches_m_pc:
-        feats_m.append(compute_feats(patch, kernels))
-    for patch in patches_n_pc:
-        feats_n.append(compute_feats(patch, kernels))
-    
-    # package it into a SliceInfo object
-    si_payload = (images_fn[i], slice_no, 
-                  slice_im, slice_im_or,
-                  slice_lb, slice_lb_or,
-                  patches_m_pc, patches_n_pc,
-                  feats_m, feats_n)
-    
-    return SliceInfo(*si_payload)
-
-def compute_hogs(patch):
-    fd, hog_im = hog(patch, orientations=8, pixels_per_cell=(4, 4), 
-                     cells_per_block=(1, 1), visualise=True)
-    return fd
 
 def create_sliceinfo_w(images_fn, labels_fn, kernels, i):
     # figure out the biggest slice
@@ -267,19 +319,6 @@ def create_sliceinfo_w(images_fn, labels_fn, kernels, i):
     
     
     return SliceInfo(*si_payload)
-
-def create_sliceinfos(images_fn, labels_fn):
-    kernels = generate_kernels() # create gabor kernels
-    slice_infos = []    
-    
-    if len(sys.argv) < 2:
-        for i in range(len(images_fn)):                
-            slice_infos.append(create_sliceinfo(images_fn, labels_fn, kernels, i))
-    
-    else:
-        slice_infos = Parallel(n_jobs=int(sys.argv[1]))(delayed(create_sliceinfo)(images_fn, labels_fn, kernels, i) for i in range(len(images_fn)))
-    
-    return slice_infos
 
 def create_sliceinfos_w(images_fn, labels_fn):
     print("Creating weighted Slice Infos...")
@@ -776,6 +815,6 @@ if __name__ == "__main__": # only run if it's the main module
     #get_all_similarities("recons_bladder/")
     #bigtest2()
     #run()
-    plot_save_comparisons()
+    #plot_save_comparisons()
     #bigtest()
     pass
