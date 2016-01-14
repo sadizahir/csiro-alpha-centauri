@@ -577,7 +577,8 @@ def test_rf_feats_fullspec(slice_infos, i):
     print("Finished in {:.2f} seconds.".format(dt))
 
 """
-Helper function to classify a single patch, used in test_rf_feats_fullspec.
+Helper function to check the prediction for a single patch, used in
+test_rf_feats_fullspec.
 
 **This function is not updated for the HOG featureset that is now added by
 default to the SliceInfo class. Therefore, you'll get an error and the
