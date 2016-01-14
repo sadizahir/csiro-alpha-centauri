@@ -198,6 +198,23 @@ Deprecated.
 #    return slice_infos
 
 """
+Deprecated.
+"""
+#def classify_patch(RF, kernels, patches, i):
+#    # compute the feats of the patch
+#    patch = patches[i]
+#    feat = compute_feats(patch, kernels)
+#    feat = feat.flatten().reshape(1, -1)
+#    prediction = RF.predict(feat)
+#    print("Classifying patch {}/{}: {}".format(i, len(patches), prediction))
+#    if prediction == 'M':
+#        return np.ones(patch.shape)
+#    elif prediction == 'N':
+#        return np.zeros(patch.shape)
+#    else:
+#        return np.full(patch.shape, prediction)
+
+"""
 Given an image (most likely a small patch), generates HOG features for that
 image. Returns a list of numbers.
 
@@ -271,7 +288,32 @@ def create_pc_patches_w(slice_im, slice_lb):
     
     return patches_m_pc, patches_n_pc, vals_m_pc, vals_n_pc
 
+"""
+Given a list of image filenames, a list of label filenames, a set of Gabor
+kernels, and the index of the image in the list of images, produces a
+"SliceInfo" object from the data. These filenames reference existing 3DMRI
+Nifti volumes that are in a folder defined by the "path" constant at the top.
+Images are defined with the extension stored in "im_name" and the label
+extension stored in "lb_name", both constants defined at the top.
 
+This is done by first finding the largest label in the 3D volume. The largest
+label is the label image whose contains the most amount of bright pixels. This
+is referred to as the "slice no." for a particular SliceInfo object.
+
+The slice_no slice of each 3DMRI and associated 3D Label is extracted and
+stored as raw image data (see "get_nifti_slice" in helper_io).
+
+The slice is optionally cropped down to a fixed size around the center as
+defined by the crop constant defined at the top. If the crop constant is None
+or 0, the slice isn't cropped. This cropping applies to both the image and
+the label; they need to be associated with each other.
+
+The principal patches of the slice are computed with "create_pc_patches_w" (see
+above). Each principal patch is described in terms of features (see 
+"compute_feats" and "compute_hogs"). The combination of the slice information,
+the patches and the features are stored in a SliceInfo object which is
+finally returned.
+"""
 def create_sliceinfo_w(images_fn, labels_fn, kernels, i):
     # figure out the biggest slice
     print("Creating Weighted Slice Info... {}/{}: {}".format(i+1, len(images_fn), labels_fn[i]))
@@ -320,6 +362,19 @@ def create_sliceinfo_w(images_fn, labels_fn, kernels, i):
     
     return SliceInfo(*si_payload)
 
+"""
+Given a list of filenames of 3DMRI Nifti images and a list of filenames of
+of their associated labels, creates a list of SliceInfo objects, each of which
+containing the slice information, patches and features associated to a
+particular Nifti filename in the input arguments.
+
+Each SliceInfo object is created on a separate process, with the maximum
+number of processes defined as the first commandline argument. If there is no
+commandline argument or if the number of processes is 1, the SliceInfos are
+generated serially.
+
+Returns the list of the SliceInfo objects.
+"""
 def create_sliceinfos_w(images_fn, labels_fn):
     print("Creating weighted Slice Infos...")
     kernels = generate_kernels() # create gabor kernels
@@ -335,8 +390,24 @@ def create_sliceinfos_w(images_fn, labels_fn):
     return slice_infos
 
 """
-Gives you flattened training features from every slice except for the ith
-slice, which will be the test slice.
+Given access to an entire set of SliceInfo objects and given an index which
+will be the index of the "test slice", creates a set of "features" and
+associated "labels" which will be used to train the random forest classifier.
+The sets are reshaped signficantly so that the classifier can fit to them.
+
+Returns a tuple containing the set of samples and set of labels for an RF
+to fit directly against them. The sample/label set could also be used for
+any other machine learning application which supports inputs of this shape
+(2D features; 1D labels). The training features leave-n-out, where n = 1 and
+the left out data corresponds to the ith SliceInfo object.
+
+There is some deprecated code in here. Originally, patches and features were
+labelled in a binary manner. That is, a patch was described as being a
+"masked" patch or an "unmasked" patch, where patches containing at least one
+pixel of interest were labelled as "masked". Now, the SliceInfos generally
+use patch "values" instead, which describe what percentage of the patch or
+associated feature describing the patch contains bright pixels in the
+associated label patch.
 """
 def generate_training_feats(slice_infos, i):
     train_m = []
@@ -396,15 +467,32 @@ def generate_training_feats(slice_infos, i):
 
     return samples, labels
 
-
+"""
+Given a set of features, a set of associated labels, and the number of trees
+that the classifier should use, trains a random forest classifier on the data
+and returns a reference to the classifier for use in predicting the classes
+of patches.
+"""
 def train_rf_classifier(features, labels, no_trees):
     rf = RandomForestClassifier(n_estimators=no_trees, n_jobs=-1)
     rf.fit(features, labels)
     return rf
     
 """
-Tests the RF classifier on the pre-computed features for a particular
-slice.
+Given access to the full set of existing SliceInfo objects, and an index which
+represents a "test slice", generates training data using all the SliceInfo
+objects and their features (except for the ith SliceInfo object) and trains
+a random forest classifier on that data (see "generate_training_feats" and
+"train_rf_classifier"). Then, asks the trained classifier to predict the
+classes of the patches stored inside the test slice (the ith SliceInfo object).
+Records whether the random forest correctly classified each slice, and then
+displays the results. The predictions are only on the existing features stored
+for training in the SliceInfo object, so it doesn't check every single patch.
+Essentially, this means that it only tests on the PCPs of the ith SliceInfo.
+
+**This function is not updated for the HOG featureset that is now added by
+default to the SliceInfo class. Therefore, you'll get an error and the
+program will crash if you try to call this function right now.
 """
 def test_rf_feats(slice_infos, i):
     print("Testing Case {}/{}: ".format(i+1, len(slice_infos)), end="")
@@ -447,7 +535,13 @@ def test_rf_feats(slice_infos, i):
 
 
 """
-Modified full-spectrum classification of *all* slices.
+Works like test_rf_feats, but instead of testing the classifier on the PCPs
+of each SliceInfo object, tests the classifier on *every* patch that is
+generated from the slice image.
+
+**This function is not updated for the HOG featureset that is now added by
+default to the SliceInfo class. Therefore, you'll get an error and the
+program will crash if you try to call this function right now.
 """
 def test_rf_feats_fullspec(slice_infos, i):
     feats, labels = generate_training_feats(slice_infos, i)
@@ -482,6 +576,13 @@ def test_rf_feats_fullspec(slice_infos, i):
     print(res1.count(True) + res2.count(True))
     print("Finished in {:.2f} seconds.".format(dt))
 
+"""
+Helper function to classify a single patch, used in test_rf_feats_fullspec.
+
+**This function is not updated for the HOG featureset that is now added by
+default to the SliceInfo class. Therefore, you'll get an error and the
+program will crash if you try to call this function right now.
+"""
 def check_classify(RF, kernels, patch, patch_label, i, tot):        
     # kernel the patch
     print("Checking Classifying patch {}/{}".format(i, tot))
@@ -492,22 +593,7 @@ def check_classify(RF, kernels, patch, patch_label, i, tot):
         return True
     else:
         return False        
-
-# attempts to classify patch i of patches
-def classify_patch(RF, kernels, patches, i):
-    # compute the feats of the patch
-    patch = patches[i]
-    feat = compute_feats(patch, kernels)
-    feat = feat.flatten().reshape(1, -1)
-    prediction = RF.predict(feat)
-    print("Classifying patch {}/{}: {}".format(i, len(patches), prediction))
-    if prediction == 'M':
-        return np.ones(patch.shape)
-    elif prediction == 'N':
-        return np.zeros(patch.shape)
-    else:
-        return np.full(patch.shape, prediction)
-        
+      
 def classify_patch_w(fn, kernels, patches, i):
     RF = joblib.load(fn)
     patch = patches[i]
