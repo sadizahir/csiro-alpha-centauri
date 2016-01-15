@@ -80,7 +80,19 @@ def match(feats, ref_feats):
             min_error = error
             min_i = i
     return min_i
-    
+
+"""
+Given an image (most likely a small patch), generates HOG features for that
+image. Returns a list of numbers.
+
+In this release, the HOG features have fixed parameters. In the future, they
+will be modifiable through global constants.
+"""
+def compute_hogs(patch):
+    fd, hog_im = hog(patch, orientations=8, pixels_per_cell=(4, 4), 
+                     cells_per_block=(1, 1), visualise=True)
+    return fd
+
 """
 Plot a selection of filter banks and their Gabor responses.
 """

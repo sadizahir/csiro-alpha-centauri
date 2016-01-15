@@ -16,15 +16,20 @@ from helper_eigen import get_randoms_w
 
 from helper_gabor import generate_kernels
 from helper_gabor import compute_feats
+from helper_gabor import compute_hogs
 
 from time import time
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_extraction.image import extract_patches_2d
 from sklearn.feature_extraction.image import reconstruct_from_patches_2d
 from skimage.feature import hog
+from joblib import Parallel, delayed
 
 import sys
 import getopt
+
+import dill
+import joblib
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -41,7 +46,7 @@ pc_max = 500
 ct_cap_min = -1000 # minimum CT brightness (set ct_cap_max for no clipping)
 ct_cap_max = 2000 # maximum CT brightness (set to 0 for no clipping)
 ct_monte = 1 # 1 will use random patches; 0 will use PCA patches
-pickle = "slice_infos_12.pkl" # path and filename to save the SliceInfos
+pickle = "training_data_CTV_12.pkl" # path and filename to save the SliceInfos
 recons = "recons_12_3.pkl" # path and filename to store the patches of reconstruction
 generate = 0 # toggle generation of new SliceInfos
 classify = 0 # test classification engine
@@ -106,18 +111,6 @@ class SliceInfo():
             print("Masked Values: ", self.vals_m)
         if self.vals_n:
             print("Unmasked Values: ", self.vals_n)
-
-"""
-Given an image (most likely a small patch), generates HOG features for that
-image. Returns a list of numbers.
-
-In this release, the HOG features have fixed parameters. In the future, they
-will be modifiable through global constants.
-"""
-def compute_hogs(patch):
-    fd, hog_im = hog(patch, orientations=8, pixels_per_cell=(4, 4), 
-                     cells_per_block=(1, 1), visualise=True)
-    return fd
 
 """
 Given an image and associated label, generate the "principal component patches"
@@ -254,16 +247,20 @@ def create_sliceinfo_w(images_fn, labels_fn, kernels, i):
     
     return SliceInfo(*si_payload)
 
-def generate_training_data(path, im_name, lb_name):
+def generate_training_data(jobs):
     print("Generating Training Data...")
     slice_infos = []
     
     images_fn, labels_fn = get_filenames(path, im_name, lb_name) 
     kernels = generate_kernels()
-    
-    for i in range(len(images_fn)):
-        slice_infos.append(create_sliceinfo_w(images_fn, labels_fn, kernels, i))
+        
+    slice_infos = Parallel(n_jobs=jobs)(delayed(create_sliceinfo_w)(images_fn, labels_fn, kernels, i) for i in range(len(images_fn)))
 
+    with open(pickle, 'wb') as f:
+        dill.dump(slice_infos, f)
+        
+def generate_labels(jobs):
+    print("Generating Labels...")
 
 """
 Commandline arguments for classification routine:
@@ -283,8 +280,7 @@ reconstructions with the ground truth labels stored in the training data *.pkl
 file generated above and save the reports in a directory.
 """
 def main(argv):
-    supported_opts = "tlr"
-    selected_opts = []
+    supported_opts = "t:lr"
 
     try:
         opts, args = getopt.getopt(argv[1:], supported_opts)
@@ -293,16 +289,20 @@ def main(argv):
         sys.exit(2)
     
     for opt, arg in opts:
-        selected_opts.append(opt)
+       
+        if "-t" == opt: # generate training data
+            try:
+                jobs = int(arg)
+            except:
+                print("Defaulting to 1 job for training...")
+                jobs = 1
+            generate_training_data(jobs)
         
-    if "-t" in selected_opts: # generate training data
-        generate_training_data(path, im_name, lb_name)
+        if "-l" == opt: # generate labels
+            print("You chose L.")
         
-    if "-l" in selected_opts: # generate labels
-        print("You chose L.")
-    
-    if "-r" in selected_opts: # generate reports
-        print("You chose R.")
+        if "-r" == opt: # generate reports
+            print("You chose R.")
     
 
 if __name__ == "__main__":
