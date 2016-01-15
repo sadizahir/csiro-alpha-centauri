@@ -247,6 +247,11 @@ def create_sliceinfo_w(images_fn, labels_fn, kernels, i):
     
     return SliceInfo(*si_payload)
 
+"""
+Creates all the SliceInfo objects from a set of 3D volume MRI and label
+filenames (see "create_sliceinfo_w") and saves them to a *.pkl file described
+in the "pickle" constant at the top.
+"""
 def generate_training_data(jobs):
     print("Generating Training Data...")
     slice_infos = []
@@ -258,7 +263,120 @@ def generate_training_data(jobs):
 
     with open(pickle, 'wb') as f:
         dill.dump(slice_infos, f)
-        
+
+"""
+Given access to an entire set of SliceInfo objects and given an index which
+will be the index of the "test slice", creates a set of "features" and
+associated "labels" which will be used to train the random forest classifier.
+The sets are reshaped signficantly so that the classifier can fit to them.
+
+Returns a tuple containing the set of samples and set of labels for an RF
+to fit directly against them. The sample/label set could also be used for
+any other machine learning application which supports inputs of this shape
+(2D features; 1D labels). The training features leave-n-out, where n = 1 and
+the left out data corresponds to the ith SliceInfo object.
+
+There is some deprecated code in here. Originally, patches and features were
+labelled in a binary manner. That is, a patch was described as being a
+"masked" patch or an "unmasked" patch, where patches containing at least one
+pixel of interest were labelled as "masked". Now, the SliceInfos generally
+use patch "values" instead, which describe what percentage of the patch or
+associated feature describing the patch contains bright pixels in the
+associated label patch.
+"""
+def generate_training_feats(slice_infos, i):
+    train_m = []
+    train_n = []
+
+    labels_m = []    
+    labels_n = []
+    
+    hogs_m = []
+    hogs_n = []
+    
+    # go through each slice
+    for j in range(len(slice_infos)):
+        # if it's the ith slice, don't include it in the training
+        if j == i:
+            continue
+        train_m.append(slice_infos[j].feats_m)
+        train_n.append(slice_infos[j].feats_n)
+        if slice_infos[j].vals_m != None:
+            labels_m.extend(slice_infos[j].vals_m)
+            labels_n.extend(slice_infos[j].vals_n)
+        if slice_infos[j].hogs_m != None:
+            hogs_m.append(slice_infos[j].hogs_m)
+            hogs_n.append(slice_infos[j].hogs_n)
+    
+    train_m = np.array(train_m)
+    train_n = np.array(train_n) 
+    hogs_m = np.array(hogs_m)
+    hogs_n = np.array(hogs_n)    
+    
+    tms = train_m.shape
+    tns = train_n.shape
+    hms = hogs_m.shape
+    hns = hogs_n.shape
+    
+    print(tms, tns)
+    print(hms, hns)
+    
+    train_m = train_m.reshape(tms[0] * tms[1], tms[2] * tms[3])
+    train_n = train_n.reshape(tns[0] * tns[1], tns[2] * tns[3])
+    hogs_m = hogs_m.reshape(hms[0] * hms[1], hms[2])
+    hogs_n = hogs_n.reshape(hns[0] * hns[1], hns[2])
+    
+    train_m = np.concatenate((train_m, hogs_m), axis=1)
+    train_n = np.concatenate((train_n, hogs_n), axis=1)
+    
+    print(train_m.shape, train_n.shape)
+    #print(hogs_m.shape, hogs_n.shape)    
+    
+    #raise Exception
+    
+    samples = np.concatenate((train_m, train_n))
+    if slice_infos[0].vals_m == None:
+        labels = ['M' for k in train_m] + ['N' for p in train_n]
+    else:
+        labels = labels_m + labels_n
+
+    return samples, labels
+
+"""
+Given a set of features, a set of associated labels, and the number of trees
+that the classifier should use, trains a random forest classifier on the data
+and returns a reference to the classifier for use in predicting the classes
+of patches.
+
+Optimally you would use the features and labels created by "generate_training_
+feats" but any features, labels set would suffice for the classifier.
+"""
+def train_rf_classifier(features, labels, no_trees):
+    rf = RandomForestClassifier(n_estimators=no_trees, n_jobs=-1)
+    rf.fit(features, labels)
+    return rf
+
+"""
+
+"""
+def classify_patch_w(fn, kernels, patches, i):
+    RF = joblib.load(fn)
+    patch = patches[i]
+    feat = compute_feats(patch, kernels)
+    feat = feat.flatten().reshape(1, -1)
+    hogs = compute_hogs(patch)
+    hogs = hogs.flatten().reshape(1, -1)
+    feat = np.concatenate((feat, hogs), axis=1)
+    
+    prediction = RF.predict(feat)
+    print("Classifying patch {}/{}: {}".format(i, len(patches), prediction))
+    if prediction == 'M':
+        return np.ones(patch.shape)
+    elif prediction == 'N':
+        return np.zeros(patch.shape)
+    else:
+        return np.full(patch.shape, prediction)
+
 def generate_labels(jobs):
     print("Generating Labels...")
 
