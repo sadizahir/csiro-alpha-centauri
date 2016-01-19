@@ -22,7 +22,6 @@ from time import time
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_extraction.image import extract_patches_2d
 from sklearn.feature_extraction.image import reconstruct_from_patches_2d
-from skimage.feature import hog
 from joblib import Parallel, delayed
 
 import sys
@@ -46,10 +45,8 @@ pc_max = 500
 ct_cap_min = -1000 # minimum CT brightness (set ct_cap_max for no clipping)
 ct_cap_max = 2000 # maximum CT brightness (set to 0 for no clipping)
 ct_monte = 1 # 1 will use random patches; 0 will use PCA patches
-pickle = "training_data_CTV_12.pkl" # path and filename to save the SliceInfos
+pickle = "training_data_bladder_12.pkl" # path and filename to save the SliceInfos
 recons = "recons_12_3.pkl" # path and filename to store the patches of reconstruction
-generate = 0 # toggle generation of new SliceInfos
-classify = 0 # test classification engine
 no_trees = 10 # number of trees to use for classifier
 fullspec_i = 3
 crop = (128, 128)
@@ -294,6 +291,9 @@ def generate_training_feats(slice_infos, i):
     hogs_m = []
     hogs_n = []
     
+    pixels_m = []
+    pixels_n = []
+    
     # go through each slice
     for j in range(len(slice_infos)):
         # if it's the ith slice, don't include it in the training
@@ -301,6 +301,8 @@ def generate_training_feats(slice_infos, i):
             continue
         train_m.append(slice_infos[j].feats_m)
         train_n.append(slice_infos[j].feats_n)
+        pixels_m.append(slice_infos[j].patches_m_pc)
+        pixels_n.append(slice_infos[j].patches_n_pc)
         if slice_infos[j].vals_m != None:
             labels_m.extend(slice_infos[j].vals_m)
             labels_n.extend(slice_infos[j].vals_n)
@@ -311,26 +313,39 @@ def generate_training_feats(slice_infos, i):
     train_m = np.array(train_m)
     train_n = np.array(train_n) 
     hogs_m = np.array(hogs_m)
-    hogs_n = np.array(hogs_n)    
+    hogs_n = np.array(hogs_n)
+    pixels_m = np.array(pixels_m)
+    pixels_n = np.array(pixels_n)    
     
     tms = train_m.shape
     tns = train_n.shape
     hms = hogs_m.shape
     hns = hogs_n.shape
+    pms = pixels_m.shape
+    pns = pixels_n.shape
     
     print(tms, tns)
     print(hms, hns)
+    print(pms, pns)
     
     train_m = train_m.reshape(tms[0] * tms[1], tms[2] * tms[3])
     train_n = train_n.reshape(tns[0] * tns[1], tns[2] * tns[3])
     hogs_m = hogs_m.reshape(hms[0] * hms[1], hms[2])
     hogs_n = hogs_n.reshape(hns[0] * hns[1], hns[2])
-    
-    train_m = np.concatenate((train_m, hogs_m), axis=1)
-    train_n = np.concatenate((train_n, hogs_n), axis=1)
+    pixels_m = pixels_m.reshape(pms[0]*pms[1], pms[2]*pms[3])
+    pixels_n = pixels_m.reshape(pns[0]*pns[1], pns[2]*pns[3])
     
     print(train_m.shape, train_n.shape)
-    #print(hogs_m.shape, hogs_n.shape)    
+    print(hogs_m.shape, hogs_n.shape)
+    print(pixels_m.shape, pixels_n.shape)
+    
+    #train_m = np.concatenate((train_m, hogs_m, pixels_m), axis=1)
+    #train_n = np.concatenate((train_n, hogs_n, pixels_n), axis=1)
+
+    train_m = np.concatenate((train_m), axis=1)
+    train_n = np.concatenate((train_n), axis=1)    
+    
+    print(train_m.shape, train_n.shape) 
     
     #raise Exception
     
@@ -357,7 +372,7 @@ def train_rf_classifier(features, labels, no_trees):
     return rf
 
 """
-
+Classify a patch using a supplied RandomForestClassifier.
 """
 def classify_patch_w(fn, kernels, patches, i):
     RF = joblib.load(fn)
@@ -366,10 +381,11 @@ def classify_patch_w(fn, kernels, patches, i):
     feat = feat.flatten().reshape(1, -1)
     hogs = compute_hogs(patch)
     hogs = hogs.flatten().reshape(1, -1)
-    feat = np.concatenate((feat, hogs), axis=1)
+    pixels = patch.flatten().reshape(1, -1)
+    feat = np.concatenate((feat, hogs, pixels), axis=1)
     
     prediction = RF.predict(feat)
-    print("Classifying patch {}/{}: {}".format(i, len(patches), prediction))
+    #print("Classifying patch {}/{}: {}".format(i, len(patches), prediction))
     if prediction == 'M':
         return np.ones(patch.shape)
     elif prediction == 'N':
@@ -377,8 +393,212 @@ def classify_patch_w(fn, kernels, patches, i):
     else:
         return np.full(patch.shape, prediction)
 
+"""
+Classifies multiple patches.
+"""
+def classify_patch_p(fn, kernels, patches, a, b):
+    print("Classifying group {}-{}/{}".format(a, b, len(patches)))
+    RF = joblib.load(fn)
+    res = []
+    for patch in patches[a:b]:
+        feat = compute_feats(patch, kernels)
+        feat = feat.flatten().reshape(1, -1)
+        #hogs = compute_hogs(patch)
+        #hogs = hogs.flatten().reshape(1, -1)
+        #pixels = patch.flatten().reshape(1, -1)
+        #feat = np.concatenate((feat, hogs, pixels), axis=1)
+        
+        prediction = RF.predict(feat)
+        #print("Classifying patch {}/{}: {}".format(i, len(patches), prediction))
+        if prediction == 'M':
+            res.append(np.ones(patch.shape))
+        elif prediction == 'N':
+            res.append(np.zeros(patch.shape))
+        else:
+            res.append(np.full(patch.shape, prediction))
+    return res
+    
+
+"""
+Generate labels using Random Forest on a particular
+"""
+def rf_reconstruct(jobs, slice_infos, i):
+    t0 = time()
+    feats, labels = generate_training_feats(slice_infos, i)
+    labels = np.array(labels)
+    RF = train_rf_classifier(feats, labels, no_trees)
+
+    dt1 = time() - t0   
+    t0 = time()
+    
+    test_sl = slice_infos[i]
+    image = test_sl.slice_im
+    
+    kernels = generate_kernels()
+    
+    dt2 = time() - t0
+    t0 = time()
+    
+    # break the image into patches; all of these will be classified
+    patch_size = (psize, psize)
+    # _a stands for "all"
+    patches_a = extract_patches_2d(image, patch_size)
+    # _p stands for "predict"
+    
+    dt3 = time() - t0
+    t0 = time()
+    
+    # dump the RF
+    fn_rf = 'rf.joblib'
+    joblib.dump(RF, fn_rf)
+    
+    dt4 = time() - t0
+    t0 = time()
+    
+    chunk_size = len(patches_a) / float(jobs)
+        
+    # check each patch
+    if len(sys.argv) >= 2:
+        #patches_p = Parallel(n_jobs=jobs)(delayed(classify_patch)(RF, kernels, patches_a, i) for i in range(len(patches_a)))
+        #patches_p = Parallel(n_jobs=jobs)(delayed(classify_patch_w)(fn_rf, kernels, patches_a, i) for i in range(len(patches_a)))
+        patches_x = Parallel(n_jobs=jobs)(delayed(classify_patch_p)(fn_rf, kernels, patches_a, i, i+int(chunk_size)) for i in range(0, len(patches_a), int(chunk_size)))    
+        patches_p = []        
+        for group in patches_x:
+            patches_p.extend(group)
+    else:
+        patches_p = []
+        for i in range(len(patches_a)):
+            patches_p.append(classify_patch_w(RF, kernels, patches_a, i))
+        
+            
+    dt5 = time() - t0
+    t0 = time()
+    
+    # reconstruct based on the patch
+    recons_im = reconstruct_from_patches_2d(np.asarray(patches_p), image.shape)
+    
+    dt6 = time() - t0
+    t0 = time()
+    
+    print("Completed Reconstruction {}/{}: {} DT: {:.2f} {:.2f} {:.2f} {:.2f} {:.2f} {:.2f}".format(i, len(slice_infos), recons, dt1, dt2, dt3, dt4, dt5, dt6))
+    
+    # save reconstruction!
+    with open(recons, 'wb') as f:
+        dill.dump(recons_im, f)
+
+"""
+Threshold a reconstructed image by pushing numbers below value down to 0 and
+numbers equal to or above value up to 1.
+"""
+def threshold(image, value, round=None):
+    threshold = np.array(image) # make a copy
+    threshold[threshold < value] = 0
+    if round:
+        threshold[threshold >= value] = 1
+    return threshold
+
+"""
+Uses the label to mask out the image.
+"""
+def mask_out(image, label):
+    mask = np.where(label == 0, -1000, image)
+    return mask
+
+def compare_im(recons_im, real_lb, display=False):
+    if display:
+        plt.imshow(recons_im)
+        plt.show()
+        
+        plt.imshow(real_lb)
+        plt.show()
+    
+    recons_dice = recons_im.astype(int)
+    label_dice = real_lb.astype(int)
+    dice = float(2*np.count_nonzero(recons_dice & label_dice))/(np.count_nonzero(recons_dice)
+    + np.count_nonzero(label_dice))
+
+    return dice
+
 def generate_labels(jobs):
     print("Generating Labels...")
+    global fullspec_i
+    global recons
+    with open(pickle, 'rb') as f:
+        slice_infos = dill.load(f)
+    for x in [17]:#range(0, 35):
+        fullspec_i = x
+        recons = "recons_" + str(psize) + "_" + str(fullspec_i) + ".pkl"
+        print("Working on...", recons)
+        rf_reconstruct(jobs, slice_infos, fullspec_i)
+
+def generate_reports():
+    with open(pickle, 'rb') as f:
+        slice_infos = dill.load(f)
+        
+    threshv = 0.50
+    allbestsims = []
+    allsims = []
+    
+    # go through each case
+    for i in range(0, 35):
+        allsims.append([])
+        with open("recons_bladder/recons_12_" + str(i) + ".pkl", 'rb') as f:
+            recons_im = dill.load(f)
+            recons_th = threshold(recons_im, threshv, True)
+            recons_tv = threshold(recons_im, threshv)
+        real_lb = slice_infos[i].slice_lb
+        if ct_cap_max:
+            slice_im = np.clip(slice_infos[i].slice_im, ct_cap_min, ct_cap_max)
+
+        best_sim = 0
+        best_thresh = 0.5
+
+        for a in range(0, 100):
+            a = a/100.0
+            recons_th = threshold(recons_im, a, True)
+            sim = compare_im(recons_th, real_lb)
+            allsims[i].append(sim)
+            if sim > best_sim:
+                best_sim = sim
+                best_thresh = 0.25
+        
+        allbestsims.append(best_sim)
+        recons_th = threshold(recons_im, best_thresh, True)
+        
+        # plot each
+        plt.figure(figsize=(8,12))
+        #plt.subplot(4, 1, 1)
+        
+        plt.axis('off')
+        plt.subplot(3, 2, 1)
+        plt.axis('off')
+        plt.imshow(slice_im, cmap=plt.cm.gray)
+        plt.subplot(3, 2, 2)
+        plt.axis('off')
+
+        plt.imshow(slice_im, cmap=plt.cm.gray)
+        plt.subplot(3, 2, 3)
+        plt.axis('off')
+
+        plt.imshow(recons_tv)
+        plt.subplot(3, 2, 4)
+        plt.axis('off')
+
+        plt.imshow(real_lb)
+        plt.subplot(3, 2, 5)
+        plt.axis('off')
+
+        plt.imshow(mask_out(slice_im, recons_th), cmap=plt.cm.gray)
+        plt.subplot(3, 2, 6)
+        plt.axis('off')
+        plt.imshow(mask_out(slice_im, real_lb), cmap=plt.cm.gray)
+        plt.suptitle("Bladder Reconstructions at Threshold {}, Case {}".format(best_thresh,i) + "\nSimilarity: {}".format(compare_im(recons_th, real_lb)))
+        plt.savefig('compares_bladder/case_' + str(i) + '.png')
+    
+    with open('compares_bladder/sims.pkl', 'wb') as f:
+        dill.dump(allsims, f)
+    
+    print("Average DSC: ", np.mean(allbestsims))
 
 """
 Commandline arguments for classification routine:
@@ -398,7 +618,7 @@ reconstructions with the ground truth labels stored in the training data *.pkl
 file generated above and save the reports in a directory.
 """
 def main(argv):
-    supported_opts = "t:lr"
+    supported_opts = "t:l:r"
 
     try:
         opts, args = getopt.getopt(argv[1:], supported_opts)
@@ -417,10 +637,15 @@ def main(argv):
             generate_training_data(jobs)
         
         if "-l" == opt: # generate labels
-            print("You chose L.")
+            try:
+                jobs = int(arg)
+            except:
+                print("Defaulting to 1 job for training...")
+                jobs = 1
+            generate_labels(jobs)
         
         if "-r" == opt: # generate reports
-            print("You chose R.")
+            generate_reports()
     
 
 if __name__ == "__main__":

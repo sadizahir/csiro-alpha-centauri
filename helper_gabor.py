@@ -16,6 +16,8 @@ import matplotlib.pyplot as plt
 from skimage.filters import gabor_kernel
 from scipy import ndimage as ndi
 from scipy import stats
+from skimage.feature import hog
+
 
 # Debugging stuff
 # Set to 0 if you don't want image-size messages, timing, etc.
