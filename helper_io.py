@@ -126,7 +126,7 @@ def get_filenames(path, image_filter, label_filter, regint_filter):
         elif image_filter in fn:
             images_fn.append(fn)
         elif regint_filter in fn:
-            regint_fn = []
+            regint_fn.append(fn)
     return images_fn, labels_fn, regint_fn
 
 """

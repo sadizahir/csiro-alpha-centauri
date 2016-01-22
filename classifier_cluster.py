@@ -38,7 +38,7 @@ path = "ct/" # path to the CTs and the associated labels
 im_name = "CT.nii.gz" # string used to select the images
 lb_name = "CT_CTV.nii.gz" # string used to select the labels
 ro_name = "ATL_CTV_DILATE.nii.gz" # string used to select regions of interest
-pickle = "training_data_bladder_12.pkl" # path and filename to save the SliceInfos
+pickle = "training_data_CTV_12.pkl" # path and filename to save the SliceInfos
 recons = "recons_12_3.pkl" # path and filename to store the patches of reconstruction
 psize = 12 # patch "radius", so the patch dimensions are psize x psize
 # how many "principal component" patches to generate per slice per class
