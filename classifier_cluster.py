@@ -285,12 +285,6 @@ def generate_training_feats(slice_infos, i):
     labels_m = []    
     labels_n = []
     
-    hogs_m = []
-    hogs_n = []
-    
-    pixels_m = []
-    pixels_n = []
-    
     # go through each slice
     for j in range(len(slice_infos)):
         # if it's the ith slice, don't include it in the training
@@ -298,49 +292,28 @@ def generate_training_feats(slice_infos, i):
             continue
         train_m.append(slice_infos[j].feats_m)
         train_n.append(slice_infos[j].feats_n)
-        pixels_m.append(slice_infos[j].patches_m_pc)
-        pixels_n.append(slice_infos[j].patches_n_pc)
         if slice_infos[j].vals_m != None:
             labels_m.extend(slice_infos[j].vals_m)
             labels_n.extend(slice_infos[j].vals_n)
-        if slice_infos[j].hogs_m != None:
-            hogs_m.append(slice_infos[j].hogs_m)
-            hogs_n.append(slice_infos[j].hogs_n)
     
     train_m = np.array(train_m)
     train_n = np.array(train_n) 
-    hogs_m = np.array(hogs_m)
-    hogs_n = np.array(hogs_n)
-    pixels_m = np.array(pixels_m)
-    pixels_n = np.array(pixels_n)    
     
     tms = train_m.shape
     tns = train_n.shape
-    hms = hogs_m.shape
-    hns = hogs_n.shape
-    pms = pixels_m.shape
-    pns = pixels_n.shape
     
     print(tms, tns)
-    print(hms, hns)
-    print(pms, pns)
     
     train_m = train_m.reshape(tms[0] * tms[1], tms[2] * tms[3])
     train_n = train_n.reshape(tns[0] * tns[1], tns[2] * tns[3])
-    hogs_m = hogs_m.reshape(hms[0] * hms[1], hms[2])
-    hogs_n = hogs_n.reshape(hns[0] * hns[1], hns[2])
-    pixels_m = pixels_m.reshape(pms[0]*pms[1], pms[2]*pms[3])
-    pixels_n = pixels_m.reshape(pns[0]*pns[1], pns[2]*pns[3])
     
     print(train_m.shape, train_n.shape)
-    print(hogs_m.shape, hogs_n.shape)
-    print(pixels_m.shape, pixels_n.shape)
     
     #train_m = np.concatenate((train_m, hogs_m, pixels_m), axis=1)
     #train_n = np.concatenate((train_n, hogs_n, pixels_n), axis=1)
 
-    train_m = np.concatenate((train_m), axis=1)
-    train_n = np.concatenate((train_n), axis=1)    
+    #train_m = np.concatenate((train_m), axis=1)
+    #train_n = np.concatenate((train_n), axis=1)    
     
     print(train_m.shape, train_n.shape) 
     
@@ -393,26 +366,32 @@ def classify_patch_w(fn, kernels, patches, i):
 """
 Classifies multiple patches.
 """
-def classify_patch_p(fn, kernels, patches, a, b):
-    print("Classifying group {}-{}/{}".format(a, b, len(patches)))
+def classify_patch_p(fn, kernels, patches_a, patches_r, a, b):
+    print("Classifying group {}-{}/{}".format(a, b, len(patches_a)))
     RF = joblib.load(fn)
     res = []
-    for patch in patches[a:b]:
-        feat = compute_feats(patch, kernels)
-        feat = feat.flatten().reshape(1, -1)
-        #hogs = compute_hogs(patch)
-        #hogs = hogs.flatten().reshape(1, -1)
-        #pixels = patch.flatten().reshape(1, -1)
-        #feat = np.concatenate((feat, hogs, pixels), axis=1)
-        
-        prediction = RF.predict(feat)
-        #print("Classifying patch {}/{}: {}".format(i, len(patches), prediction))
-        if prediction == 'M':
-            res.append(np.ones(patch.shape))
-        elif prediction == 'N':
-            res.append(np.zeros(patch.shape))
-        else:
-            res.append(np.full(patch.shape, prediction))
+    for i in range(a, b):
+        if i >= len(patches_a):
+            break
+        patch = patches_a[i]
+        if np.any(patches_r[i]): # if there's any nonzero
+            feat = compute_feats(patch, kernels)
+            feat = feat.flatten().reshape(1, -1)
+            #hogs = compute_hogs(patch)
+            #hogs = hogs.flatten().reshape(1, -1)
+            #pixels = patch.flatten().reshape(1, -1)
+            #feat = np.concatenate((feat, hogs, pixels), axis=1)
+            
+            prediction = RF.predict(feat)
+            #print("Classifying patch {}/{}: {}".format(i, len(patches), prediction))
+            if prediction == 'M':
+                res.append(np.ones(patch.shape))
+            elif prediction == 'N':
+                res.append(np.zeros(patch.shape))
+            else:
+                res.append(np.full(patch.shape, prediction))
+        else: # the associated ROI patch is totally zero
+            res.append(np.full(patch.shape, 0))
     return res
     
 
@@ -423,6 +402,7 @@ def rf_reconstruct(jobs, slice_infos, i):
     t0 = time()
     feats, labels = generate_training_feats(slice_infos, i)
     labels = np.array(labels)
+    print(feats.shape, labels.shape)
     RF = train_rf_classifier(feats, labels, no_trees)
 
     dt1 = time() - t0   
@@ -430,6 +410,7 @@ def rf_reconstruct(jobs, slice_infos, i):
     
     test_sl = slice_infos[i]
     image = test_sl.slice_im
+    rimage = test_sl.slice_ro
     
     kernels = generate_kernels()
     
@@ -441,6 +422,9 @@ def rf_reconstruct(jobs, slice_infos, i):
     # _a stands for "all"
     patches_a = extract_patches_2d(image, patch_size)
     # _p stands for "predict"
+    
+    patches_r = extract_patches_2d(rimage, patch_size)
+    # _r stands for "registered"
     
     dt3 = time() - t0
     t0 = time()
@@ -458,7 +442,7 @@ def rf_reconstruct(jobs, slice_infos, i):
     if len(sys.argv) >= 2:
         #patches_p = Parallel(n_jobs=jobs)(delayed(classify_patch)(RF, kernels, patches_a, i) for i in range(len(patches_a)))
         #patches_p = Parallel(n_jobs=jobs)(delayed(classify_patch_w)(fn_rf, kernels, patches_a, i) for i in range(len(patches_a)))
-        patches_x = Parallel(n_jobs=jobs)(delayed(classify_patch_p)(fn_rf, kernels, patches_a, i, i+int(chunk_size)) for i in range(0, len(patches_a), int(chunk_size)))    
+        patches_x = Parallel(n_jobs=jobs)(delayed(classify_patch_p)(fn_rf, kernels, patches_a, patches_r, i, i+int(chunk_size)) for i in range(0, len(patches_a), int(chunk_size)))    
         patches_p = []        
         for group in patches_x:
             patches_p.extend(group)
