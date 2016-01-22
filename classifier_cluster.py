@@ -37,6 +37,9 @@ import matplotlib.pyplot as plt
 path = "ct/" # path to the CTs and the associated labels
 im_name = "CT.nii.gz" # string used to select the images
 lb_name = "CT_CTV.nii.gz" # string used to select the labels
+ro_name = "ATL_CTV_DILATE.nii.gz" # string used to select regions of interest
+pickle = "training_data_bladder_12.pkl" # path and filename to save the SliceInfos
+recons = "recons_12_3.pkl" # path and filename to store the patches of reconstruction
 psize = 12 # patch "radius", so the patch dimensions are psize x psize
 # how many "principal component" patches to generate per slice per class
 # for example, 10 will result in 10 PC patches for masked, 10 PC patches
@@ -45,8 +48,6 @@ pc_max = 500
 ct_cap_min = -1000 # minimum CT brightness (set ct_cap_max for no clipping)
 ct_cap_max = 2000 # maximum CT brightness (set to 0 for no clipping)
 ct_monte = 1 # 1 will use random patches; 0 will use PCA patches
-pickle = "training_data_bladder_12.pkl" # path and filename to save the SliceInfos
-recons = "recons_12_3.pkl" # path and filename to store the patches of reconstruction
 no_trees = 10 # number of trees to use for classifier
 fullspec_i = 3
 crop = (128, 128)
@@ -64,10 +65,10 @@ class SliceInfo():
     def __init__(self, filename, slice_no,
                  slice_im, slice_im_or,
                  slice_lb, slice_lb_or,
+                 slice_ro, slice_ro_or,
                  patches_m_pc, patches_n_pc,
                  feats_m, feats_n,
-                 vals_m=None, vals_n=None,
-                 hogs_m=None, hogs_n=None):
+                 vals_m=None, vals_n=None):
         self.filename = filename
         self.slice_no = slice_no
         
@@ -75,14 +76,13 @@ class SliceInfo():
         self.slice_im_or = slice_im_or
         self.slice_lb = slice_lb
         self.slice_lb_or = slice_lb_or
-        
+        self.slice_ro = slice_ro
+        self.slice_ro_or = slice_ro_or
+                
         self.patches_m_pc = patches_m_pc
         self.patches_n_pc = patches_n_pc
         self.feats_m = feats_m
         self.feats_n = feats_n
-        
-        self.hogs_m = hogs_m
-        self.hogs_n = hogs_n
         
         self.vals_m = vals_m
         self.vals_n = vals_n
@@ -94,20 +94,18 @@ class SliceInfo():
         print("Orientation: ", np.array(self.slice_im_or).shape)
         print("Label: ", np.array(self.slice_lb).shape)
         print("Label Orientation: ", np.array(self.slice_lb_or).shape)
+        print("Atlas ROI: ", np.array(self.slice_ro).shape)
+        print("Atlas ROI Orientation: ", np.array(self.slice_ro_or).shape)
         print("Masked Patches: ", np.array(self.patches_m_pc).shape)
         print("Unmasked Patches: ", np.array(self.patches_n_pc).shape)
         print("Masked Features: ", np.array(self.feats_m).shape)
         print("Unmasked Features: ", np.array(self.feats_n).shape)
-        print("Masked Values Shape: ", np.array(self.vals_m).shape)
-        print("Unmasked Values Shape: ", np.array(self.vals_n).shape)
-        if self.hogs_m:
-            print("Masked HOGs: ", np.array(self.hogs_m).shape)
-        if self.hogs_n:
-            print("Unmasked HOGs: ", np.array(self.hogs_n).shape)
         if self.vals_m:
             print("Masked Values: ", self.vals_m)
+            print("Masked Values Shape: ", np.array(self.vals_m).shape)
         if self.vals_n:
             print("Unmasked Values: ", self.vals_n)
+            print("Unmasked Values Shape: ", np.array(self.vals_n).shape)
 
 """
 Given an image and associated label, generate the "principal component patches"
@@ -197,7 +195,7 @@ above). Each principal patch is described in terms of features (see
 the patches and the features are stored in a SliceInfo object which is
 finally returned.
 """
-def create_sliceinfo_w(images_fn, labels_fn, kernels, i):
+def create_sliceinfo_w(images_fn, labels_fn, regint_fn, kernels, i):
     # figure out the biggest slice
     print("Creating Weighted Slice Info... {}/{}: {}".format(i+1, len(images_fn), labels_fn[i]))
     slice_no = find_biggest_slice(path + labels_fn[i])
@@ -205,6 +203,7 @@ def create_sliceinfo_w(images_fn, labels_fn, kernels, i):
     # get the slice, label, and associated orientations
     slice_im, slice_im_or = get_nifti_slice(path + images_fn[i], slice_no)
     slice_lb, slice_lb_or = get_nifti_slice(path + labels_fn[i], slice_no)
+    slice_ro, slice_ro_or = get_nifti_slice(path + regint_fn[i], slice_no)
     
     # if crop, we crop the image down
     if crop:    
@@ -216,6 +215,7 @@ def create_sliceinfo_w(images_fn, labels_fn, kernels, i):
     
         slice_im = slice_im[start_x:end_x, start_y:end_y]
         slice_lb = slice_lb[start_x:end_x, start_y:end_y]
+        slice_ro = slice_ro[start_x:end_x, start_y:end_y]
             
     # figure out the principal patches
     pc_payload = (slice_im, slice_lb)
@@ -224,24 +224,20 @@ def create_sliceinfo_w(images_fn, labels_fn, kernels, i):
     # compute gabor features for the patches
     feats_m = []
     feats_n = []
-    hogs_m = []
-    hogs_n = []
     for patch in patches_m_pc:
         feats_m.append(compute_feats(patch, kernels))
-        hogs_m.append(compute_hogs(patch))
     for patch in patches_n_pc:
         feats_n.append(compute_feats(patch, kernels))
-        hogs_n.append(compute_hogs(patch))
     
     # package it into a SliceInfo object
     si_payload = (images_fn[i], slice_no, 
                   slice_im, slice_im_or,
                   slice_lb, slice_lb_or,
+                  slice_ro, slice_ro_or,
                   patches_m_pc, patches_n_pc,
                   feats_m, feats_n,
-                  vals_m, vals_n,
-                  hogs_m, hogs_n)
-    
+                  vals_m, vals_n) 
+                  
     return SliceInfo(*si_payload)
 
 """
@@ -253,10 +249,11 @@ def generate_training_data(jobs):
     print("Generating Training Data...")
     slice_infos = []
     
-    images_fn, labels_fn = get_filenames(path, im_name, lb_name) 
+    images_fn, labels_fn, regint_fn = get_filenames(path, im_name, lb_name, ro_name) 
     kernels = generate_kernels()
         
-    slice_infos = Parallel(n_jobs=jobs)(delayed(create_sliceinfo_w)(images_fn, labels_fn, kernels, i) for i in range(len(images_fn)))
+    slice_infos = Parallel(n_jobs=jobs)(delayed(create_sliceinfo_w)(images_fn, 
+                           labels_fn, regint_fn, kernels, i) for i in range(len(images_fn)))
 
     with open(pickle, 'wb') as f:
         dill.dump(slice_infos, f)
