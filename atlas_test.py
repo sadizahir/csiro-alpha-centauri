@@ -92,12 +92,13 @@ if dilate:
     base_nrrs = [f for f in sorted(os.listdir(dir_nrr)) if filt_nrr in f][0:]
     
     for fn in base_nrrs:
-        fn_components = fn.split('.')
-        case = fn_components[0].split('_')[0]
-        in_dil = dir_nrr + fn
-        res_dil = dir_nrr + case + res_dil_suffix + "." + ".".join(fn_components[1:])
-        print(run_img + " " + "-g" + " " + in_dil + " " + str(3) + " " + res_dil)
-        runCmd(run_img + " " + "-g" + " " + in_dil + " " + str(3) + " " + res_dil)
-        runCmd(run_img + " " + "-g" + " " + res_dil + " " + str(3) + " " + res_dil)
-        runCmd(run_img + " " + "-g" + " " + res_dil + " " + str(3) + " " + res_dil)
+        print(fn)
+        #fn_components = fn.split('.')
+        #case = fn_components[0].split('_')[0]
+        #in_dil = dir_nrr + fn
+        #res_dil = dir_nrr + case + res_dil_suffix + "." + ".".join(fn_components[1:])
+        #print(run_img + " " + "-g" + " " + in_dil + " " + str(3) + " " + res_dil)
+        #runCmd(run_img + " " + "-g" + " " + in_dil + " " + str(3) + " " + res_dil)
+        #runCmd(run_img + " " + "-g" + " " + res_dil + " " + str(3) + " " + res_dil)
+        #runCmd(run_img + " " + "-g" + " " + res_dil + " " + str(3) + " " + res_dil)
         
