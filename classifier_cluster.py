@@ -429,9 +429,45 @@ def classify_patch_p(fn, kernels, patches_a, patches_r, a, b):
             res.append(np.zeros(patch.shape))
     return res
     
+"""
+Classifies multiple patches like above, but does so by reading specific
+sections from a temp directory.
+"""
+def classify_patch_f(RF_pkl, kernels_pkl, patches_a_pkl, patches_r_pkl, a, b):
+    RF = dill.load(open(RF_pkl, 'rb'))
+    kernels = dill.load(open(kernels_pkl, 'rb'))
+    patches_a = dill.load(open(patches_a_pkl, 'rb'))
+    patches_r = dill.load(open(patches_r_pkl, 'rb'))
+    print("Classifying group {}-{}/{}".format(a, b, len(patches_a)))
+    res = []
+    for i in range(a, b):
+        if i >= len(patches_a):
+            break
+        patch = patches_a[i]
+        if np.all(patches_r[i]): # if there's any nonzero
+            feat = compute_feats(patch, kernels)
+            feat = feat.flatten().reshape(1, -1)
+            intens = np.array(compute_intens(patch))
+            intens = intens.flatten().reshape(1, -1)
+            #hogs = compute_hogs(patch)
+            #hogs = hogs.flatten().reshape(1, -1)
+            #pixels = patch.flatten().reshape(1, -1)
+            feat = np.concatenate((feat, intens), axis=1)
+            
+            prediction = RF.predict(feat)
+            #print("Classifying patch {}/{}: {}".format(i, len(patches), prediction))
+            if prediction == 'M':
+                res.append(np.ones(patch.shape))
+            elif prediction == 'N':
+                res.append(np.zeros(patch.shape))
+            else:
+                res.append(np.full(patch.shape, prediction))
+        else: # the associated ROI patch is totally zero
+            res.append(np.zeros(patch.shape))
+    return res
 
 """
-Generate labels using Random Forest on a particular
+Generate labels using Random Forest.
 """
 def rf_reconstruct(jobs, slice_infos, i):
     t0 = time()
@@ -472,12 +508,23 @@ def rf_reconstruct(jobs, slice_infos, i):
     t0 = time()
     
     chunk_size = len(patches_a) / float(jobs)
-        
+    
+    rf_pkl = "temp/rf.pkl"
+    kernels_pkl = "temp/kernels.pkl"
+    patches_a_pkl = "temp/patches_a.pkl"
+    patches_r_pkl = "temp/patches_r.pkl"
+    
+    dill.dump(RF, open(rf_pkl, 'wb'))
+    dill.dump(kernels, open(kernels_pkl, 'wb'))
+    dill.dump(patches_a, open(patches_a_pkl, 'wb'))
+    dill.dump(patches_r, open(patches_r_pkl, 'wb'))
+    
     # check each patch
     if len(sys.argv) >= 2:
         #patches_p = Parallel(n_jobs=jobs)(delayed(classify_patch)(RF, kernels, patches_a, i) for i in range(len(patches_a)))
         #patches_p = Parallel(n_jobs=jobs)(delayed(classify_patch_w)(fn_rf, kernels, patches_a, i) for i in range(len(patches_a)))
         patches_x = Parallel(n_jobs=jobs)(delayed(classify_patch_p)(fn_rf, kernels, patches_a, patches_r, i, i+int(chunk_size)) for i in range(0, len(patches_a), int(chunk_size)))    
+        #patches_x = Parallel(n_jobs=jobs)(delayed(classify_patch_f)(rf_pkl, kernels_pkl, patches_a_pkl, patches_r_pkl, i, i+int(chunk_size)) for i in range(0, len(patches_a), int(chunk_size)))            
         patches_p = []        
         for group in patches_x:
             patches_p.extend(group)
