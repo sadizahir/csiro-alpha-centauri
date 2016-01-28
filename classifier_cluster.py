@@ -23,6 +23,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_extraction.image import extract_patches_2d
 from sklearn.feature_extraction.image import reconstruct_from_patches_2d
 from joblib import Parallel, delayed
+from scipy import stats
 
 import sys
 import getopt
@@ -38,7 +39,7 @@ path = "ct/" # path to the CTs and the associated labels
 im_name = "CT.nii.gz" # string used to select the images
 lb_name = "CT_CTV.nii.gz" # string used to select the labels
 ro_name = "ATL_CTV_DILATE.nii.gz" # string used to select regions of interest
-pickle = "training_data_CTV_12.pkl" # path and filename to save the SliceInfos
+pickle = "training_data_CTV_12_atl_512_int.pkl" # path and filename to save the SliceInfos
 recons = "recons_12_3.pkl" # path and filename to store the patches of reconstruction
 psize = 12 # patch "radius", so the patch dimensions are psize x psize
 # how many "principal component" patches to generate per slice per class
@@ -46,11 +47,11 @@ psize = 12 # patch "radius", so the patch dimensions are psize x psize
 # for non-masked regions.
 pc_max = 500
 ct_cap_min = -1000 # minimum CT brightness (set ct_cap_max for no clipping)
-ct_cap_max = 2000 # maximum CT brightness (set to 0 for no clipping)
+ct_cap_max = 1000 # maximum CT brightness (set to 0 for no clipping)
 ct_monte = 1 # 1 will use random patches; 0 will use PCA patches
 no_trees = 10 # number of trees to use for classifier
 fullspec_i = 3
-crop = (128, 128)
+crop = None
 np.seterr(all='ignore')
 
 """
@@ -68,6 +69,7 @@ class SliceInfo():
                  slice_ro, slice_ro_or,
                  patches_m_pc, patches_n_pc,
                  feats_m, feats_n,
+                 intens_m, intens_n,
                  vals_m=None, vals_n=None):
         self.filename = filename
         self.slice_no = slice_no
@@ -83,6 +85,8 @@ class SliceInfo():
         self.patches_n_pc = patches_n_pc
         self.feats_m = feats_m
         self.feats_n = feats_n
+        self.intens_m = intens_m
+        self.intens_n = intens_n
         
         self.vals_m = vals_m
         self.vals_n = vals_n
@@ -100,11 +104,13 @@ class SliceInfo():
         print("Unmasked Patches: ", np.array(self.patches_n_pc).shape)
         print("Masked Features: ", np.array(self.feats_m).shape)
         print("Unmasked Features: ", np.array(self.feats_n).shape)
+        print("Masked I. Features: ", np.array(self.intens_m).shape)
+        print("Unmasked I. Features: ", np.array(self.intens_n).shape)
         if self.vals_m:
-            print("Masked Values: ", self.vals_m)
+            #print("Masked Values: ", self.vals_m)
             print("Masked Values Shape: ", np.array(self.vals_m).shape)
         if self.vals_n:
-            print("Unmasked Values: ", self.vals_n)
+            #print("Unmasked Values: ", self.vals_n)
             print("Unmasked Values Shape: ", np.array(self.vals_n).shape)
 
 """
@@ -168,6 +174,19 @@ def create_pc_patches_w(slice_im, slice_lb):
 #        patches_n_pc = get_eigenpatches(patches_n, psize, pc_max)
     
     return patches_m_pc, patches_n_pc, vals_m_pc, vals_n_pc
+
+"""
+Compute the intensity features of a particular patch. Specifically, the mean,
+variance, skewness and kurtosis of the intensity values of the patch.
+"""
+def compute_intens(patch):
+    feats = []
+    #patch = patch.flatten().reshape(1, -1)
+    feats.append(patch.mean())
+    feats.append(patch.var())
+    feats.extend(stats.skew(patch))
+    feats.extend(stats.kurtosis(patch))
+    return feats
     
 """
 Given a list of image filenames, a list of label filenames, a set of Gabor
@@ -224,10 +243,14 @@ def create_sliceinfo_w(images_fn, labels_fn, regint_fn, kernels, i):
     # compute gabor features for the patches
     feats_m = []
     feats_n = []
+    intens_m = []
+    intens_n = []
     for patch in patches_m_pc:
         feats_m.append(compute_feats(patch, kernels))
+        intens_m.append(compute_intens(patch))
     for patch in patches_n_pc:
         feats_n.append(compute_feats(patch, kernels))
+        intens_n.append(compute_intens(patch))
     
     # package it into a SliceInfo object
     si_payload = (images_fn[i], slice_no, 
@@ -236,6 +259,7 @@ def create_sliceinfo_w(images_fn, labels_fn, regint_fn, kernels, i):
                   slice_ro, slice_ro_or,
                   patches_m_pc, patches_n_pc,
                   feats_m, feats_n,
+                  intens_m, intens_n,
                   vals_m, vals_n) 
                   
     return SliceInfo(*si_payload)
@@ -281,6 +305,8 @@ associated label patch.
 def generate_training_feats(slice_infos, i):
     train_m = []
     train_n = []
+    intens_m = []
+    intens_n = []
 
     labels_m = []    
     labels_n = []
@@ -291,34 +317,41 @@ def generate_training_feats(slice_infos, i):
         if j == i:
             continue
         train_m.append(slice_infos[j].feats_m)
+        intens_m.append(slice_infos[j].intens_m)
         train_n.append(slice_infos[j].feats_n)
+        intens_n.append(slice_infos[j].intens_n)
         if slice_infos[j].vals_m != None:
             labels_m.extend(slice_infos[j].vals_m)
-            labels_n.extend(slice_infos[j].vals_n)
+            labels_n.extend(slice_infos[j].vals_n)    
     
     train_m = np.array(train_m)
     train_n = np.array(train_n) 
+    intens_m = np.array(intens_m)
+    intens_n = np.array(intens_n)
     
     tms = train_m.shape
     tns = train_n.shape
+    ims = intens_m.shape
+    ins = intens_n.shape
     
     print(tms, tns)
+    print(ims, ins)
+    
     
     train_m = train_m.reshape(tms[0] * tms[1], tms[2] * tms[3])
     train_n = train_n.reshape(tns[0] * tns[1], tns[2] * tns[3])
+    intens_m = intens_m.reshape(ims[0] * ims[1], ims[2])
+    intens_n = intens_n.reshape(ins[0] * ins[1], ins[2])
     
     print(train_m.shape, train_n.shape)
+    print(intens_m.shape, intens_n.shape)
     
-    #train_m = np.concatenate((train_m, hogs_m, pixels_m), axis=1)
-    #train_n = np.concatenate((train_n, hogs_n, pixels_n), axis=1)
+    train_m = np.concatenate((train_m, intens_m), axis=1)
+    train_n = np.concatenate((train_n, intens_n), axis=1)
 
     #train_m = np.concatenate((train_m), axis=1)
     #train_n = np.concatenate((train_n), axis=1)    
-    
-    print(train_m.shape, train_n.shape) 
-    
-    #raise Exception
-    
+            
     samples = np.concatenate((train_m, train_n))
     if slice_infos[0].vals_m == None:
         labels = ['M' for k in train_m] + ['N' for p in train_n]
@@ -374,13 +407,15 @@ def classify_patch_p(fn, kernels, patches_a, patches_r, a, b):
         if i >= len(patches_a):
             break
         patch = patches_a[i]
-        if np.any(patches_r[i]): # if there's any nonzero
+        if np.all(patches_r[i]): # if there's any nonzero
             feat = compute_feats(patch, kernels)
             feat = feat.flatten().reshape(1, -1)
+            intens = np.array(compute_intens(patch))
+            intens = intens.flatten().reshape(1, -1)
             #hogs = compute_hogs(patch)
             #hogs = hogs.flatten().reshape(1, -1)
             #pixels = patch.flatten().reshape(1, -1)
-            #feat = np.concatenate((feat, hogs, pixels), axis=1)
+            feat = np.concatenate((feat, intens), axis=1)
             
             prediction = RF.predict(feat)
             #print("Classifying patch {}/{}: {}".format(i, len(patches), prediction))
@@ -391,7 +426,7 @@ def classify_patch_p(fn, kernels, patches_a, patches_r, a, b):
             else:
                 res.append(np.full(patch.shape, prediction))
         else: # the associated ROI patch is totally zero
-            res.append(np.full(patch.shape, 0))
+            res.append(np.zeros(patch.shape))
     return res
     
 
@@ -485,6 +520,25 @@ def mask_out(image, label):
     mask = np.where(label == 0, -1000, image)
     return mask
 
+def min_max(sl):
+    masked = mask_out(sl.slice_im, sl.slice_lb).flatten()
+    # cap out the seeds (for CT)
+    masked[masked >= ct_cap_max] = -1000
+    local_max = masked.max()
+    masked[masked == -1000] = 1000 # eliminate the -1000 pixels so we get true min
+    local_min = masked.min()    
+    return (local_min, local_max)
+
+"""
+Find the minimum and maximum of each masked image and present them as an
+array of tuples. The minimums don't include the -1000 mask value.
+"""
+def min_maxs(slice_infos):
+    mm = []
+    for sl in slice_infos:
+        mm.append(min_max(sl))
+    return mm
+
 def compare_im(recons_im, real_lb, display=False):
     if display:
         plt.imshow(recons_im)
@@ -506,7 +560,7 @@ def generate_labels(jobs):
     global recons
     with open(pickle, 'rb') as f:
         slice_infos = dill.load(f)
-    for x in [17]:#range(0, 35):
+    for x in range(0, 30):
         fullspec_i = x
         recons = "recons_" + str(psize) + "_" + str(fullspec_i) + ".pkl"
         print("Working on...", recons)
@@ -523,11 +577,12 @@ def generate_reports():
     # go through each case
     for i in range(0, 35):
         allsims.append([])
-        with open("recons_bladder/recons_12_" + str(i) + ".pkl", 'rb') as f:
+        with open("recons_ctv_atl_512_int/recons_12_" + str(i) + ".pkl", 'rb') as f:
             recons_im = dill.load(f)
             recons_th = threshold(recons_im, threshv, True)
             recons_tv = threshold(recons_im, threshv)
         real_lb = slice_infos[i].slice_lb
+        real_ro = slice_infos[i].slice_ro
         if ct_cap_max:
             slice_im = np.clip(slice_infos[i].slice_im, ct_cap_min, ct_cap_max)
 
@@ -541,10 +596,11 @@ def generate_reports():
             allsims[i].append(sim)
             if sim > best_sim:
                 best_sim = sim
-                best_thresh = 0.25
+                best_thresh = a
         
         allbestsims.append(best_sim)
         recons_th = threshold(recons_im, best_thresh, True)
+        recons_tv = threshold(recons_im, best_thresh)
         
         # plot each
         plt.figure(figsize=(8,12))
@@ -553,7 +609,7 @@ def generate_reports():
         plt.axis('off')
         plt.subplot(3, 2, 1)
         plt.axis('off')
-        plt.imshow(slice_im, cmap=plt.cm.gray)
+        plt.imshow(real_ro, cmap=plt.cm.gray)
         plt.subplot(3, 2, 2)
         plt.axis('off')
 
@@ -573,10 +629,10 @@ def generate_reports():
         plt.subplot(3, 2, 6)
         plt.axis('off')
         plt.imshow(mask_out(slice_im, real_lb), cmap=plt.cm.gray)
-        plt.suptitle("Bladder Reconstructions at Threshold {}, Case {}".format(best_thresh,i) + "\nSimilarity: {}".format(compare_im(recons_th, real_lb)))
-        plt.savefig('compares_bladder/case_' + str(i) + '.png')
+        plt.suptitle("CTV Reconstructions with ATL/INT at Threshold {}, Case {}".format(best_thresh,i) + "\nSimilarity: {} | Range: {}".format(compare_im(recons_th, real_lb), min_max(slice_infos[i])))
+        plt.savefig('compares_ctv_atl_512_int/case_' + str(i) + '.png')
     
-    with open('compares_bladder/sims.pkl', 'wb') as f:
+    with open('compares_ctv_atl_512/sims.pkl', 'wb') as f:
         dill.dump(allsims, f)
     
     print("Average DSC: ", np.mean(allbestsims))
