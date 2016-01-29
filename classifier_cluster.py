@@ -17,13 +17,13 @@ from helper_eigen import get_randoms_w
 from helper_gabor import generate_kernels
 from helper_gabor import compute_feats
 from helper_gabor import compute_hogs
+from helper_gabor import compute_intens
 
 from time import time
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_extraction.image import extract_patches_2d
 from sklearn.feature_extraction.image import reconstruct_from_patches_2d
 from joblib import Parallel, delayed
-from scipy import stats
 
 import sys
 import getopt
@@ -175,18 +175,6 @@ def create_pc_patches_w(slice_im, slice_lb):
     
     return patches_m_pc, patches_n_pc, vals_m_pc, vals_n_pc
 
-"""
-Compute the intensity features of a particular patch. Specifically, the mean,
-variance, skewness and kurtosis of the intensity values of the patch.
-"""
-def compute_intens(patch):
-    feats = []
-    #patch = patch.flatten().reshape(1, -1)
-    feats.append(patch.mean())
-    feats.append(patch.var())
-    feats.extend(stats.skew(patch))
-    feats.extend(stats.kurtosis(patch))
-    return feats
     
 """
 Given a list of image filenames, a list of label filenames, a set of Gabor

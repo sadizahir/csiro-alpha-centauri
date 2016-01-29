@@ -96,6 +96,19 @@ def compute_hogs(patch):
     return fd
 
 """
+Compute the intensity features of a particular patch. Specifically, the mean,
+variance, skewness and kurtosis of the intensity values of the patch.
+"""
+def compute_intens(patch):
+    feats = []
+    #patch = patch.flatten().reshape(1, -1)
+    feats.append(patch.mean())
+    feats.append(patch.var())
+    feats.extend(stats.skew(patch))
+    feats.extend(stats.kurtosis(patch))
+    return feats
+
+"""
 Plot a selection of filter banks and their Gabor responses.
 """
 def plot_gabor(images, filename=None): #, patch_size):
