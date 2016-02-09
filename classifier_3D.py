@@ -10,6 +10,7 @@ from __future__ import print_function
 from helper_io import get_filenames
 from helper_io import find_biggest_slice
 from helper_io import get_nifti_slice
+from helper_io import find_no_slices
 
 from helper_eigen import extract_roi_patches_w
 from helper_eigen import get_randoms_w
@@ -51,9 +52,9 @@ pc_max = 100
 ct_cap_min = -1000 # minimum CT brightness (set ct_cap_max for no clipping)
 ct_cap_max = 1000 # maximum CT brightness (set to 0 for no clipping)
 ct_monte = 1 # 1 will use random patches; 0 will use PCA patches
-no_trees = 20 # number of trees to use for classifier
-fullspec_i = 3
-crop = (256, 256)
+no_trees = 10 # number of trees to use for classifier
+fullspec_i = 0
+crop = None
 np.seterr(all='ignore')
 
 """
@@ -114,6 +115,14 @@ class SliceInfo():
         if self.vals_n:
             #print("Unmasked Values: ", self.vals_n)
             print("Unmasked Values Shape: ", np.array(self.vals_n).shape)
+
+"""
+Contains a bunch of SliceInfos that together, make up a volume.
+"""
+class VolumeInfo():
+    def __init__(self, slice_infos):
+        self.slice_infos = slice_infos
+    
 
 """
 Given an image and associated label, generate the "principal component patches"
@@ -204,10 +213,11 @@ above). Each principal patch is described in terms of features (see
 the patches and the features are stored in a SliceInfo object which is
 finally returned.
 """
-def create_sliceinfo_w(images_fn, labels_fn, regint_fn, kernels, i):
+def create_sliceinfo_w(images_fn, labels_fn, regint_fn, kernels, i, slice_no=None):
     # figure out the biggest slice
-    print("Creating Weighted Slice Info... {}/{}: {}".format(i+1, len(images_fn), labels_fn[i]))
-    slice_no = find_biggest_slice(path + labels_fn[i])
+    if slice_no == None:    
+        slice_no = find_biggest_slice(path + labels_fn[i])
+    print("Creating Weighted Slice Info... {}/{}: Slice {}".format(i+1, len(images_fn), slice_no))
     
     # get the slice, label, and associated orientations
     slice_im, slice_im_or = get_nifti_slice(path + images_fn[i], slice_no)
@@ -254,6 +264,14 @@ def create_sliceinfo_w(images_fn, labels_fn, regint_fn, kernels, i):
                   
     return SliceInfo(*si_payload)
 
+def create_volume_info(images_fn, labels_fn, regint_fn, kernels, i, jobs):
+    print("Creating Volume Info... {}/{}: {} ({} Slices)".format(i+1, len(images_fn), labels_fn[i], ))
+    slice_infos = Parallel(n_jobs=jobs)(delayed(create_sliceinfo_w)(images_fn, 
+                           labels_fn, regint_fn, kernels, i, j) for j in range(find_no_slices(images_fn)))
+    v = VolumeInfo(slice_infos)
+    dill.dump(v, "Case" + str(i) + "VINF.pkl")
+    
+
 """
 Creates all the SliceInfo objects from a set of 3D volume MRI and label
 filenames (see "create_sliceinfo_w") and saves them to a *.pkl file described
@@ -271,6 +289,18 @@ def generate_training_data(jobs):
 
     with open(pickle, 'wb') as f:
         dill.dump(slice_infos, f)
+
+def generate_training_data_vol(jobs):
+    print("Generating Training Data (Volume)...")
+    
+    images_fn, labels_fn, regint_fn = get_filenames(path, im_name, lb_name, ro_name) 
+    kernels = generate_kernels()
+    
+    for i in range(len(images_fn)):
+        create_volume_info(images_fn, labels_fn, regint_fn, kernels, i, jobs)
+        break
+    
+    
 
 """
 Given access to an entire set of SliceInfo objects and given an index which
@@ -626,6 +656,9 @@ Generate (t)raining data using the MRI volumes inside the "path" directory. The
 training data will be stored as a *.pkl file which can be re-used for testing
 and segmentation reconstruction efforts.
 
+-v:
+Generate (v)olume training data using the volumes inside the "path" directory.
+
 -l:
 Reconstruct all the (l)abels found in the training data *.pkl file generated
 above and put the reconstructions in a directory.
@@ -636,7 +669,7 @@ reconstructions with the ground truth labels stored in the training data *.pkl
 file generated above and save the reports in a directory.
 """
 def main(argv):
-    supported_opts = "t:l:r"
+    supported_opts = "t:v:l:r"
 
     try:
         opts, args = getopt.getopt(argv[1:], supported_opts)
@@ -653,6 +686,14 @@ def main(argv):
                 print("Defaulting to 1 job for training...")
                 jobs = 1
             generate_training_data(jobs)
+        
+        if "-v" == opt: # generate training data
+            try:
+                jobs = int(arg)
+            except:
+                print("Defaulting to 1 job for training...")
+                jobs = 1
+            generate_training_data_vol(jobs)
         
         if "-l" == opt: # generate labels
             try:

@@ -51,6 +51,14 @@ def get_nifti_slice(filename, slice_no):
         print("Slice Shape: ", image_slice.shape)
         
     return (image_slice, orientation_slice)
+
+"""
+Determines how many slices there are in a volume.
+"""
+def find_no_slices(filename):
+    image = nib.load(filename)
+    image_data = image.get_data()
+    return image_data.shape[2]
     
 """
 Determine the slice number with the highest amount of label.
