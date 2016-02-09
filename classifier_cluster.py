@@ -19,7 +19,10 @@ from helper_gabor import compute_feats
 from helper_gabor import compute_hogs
 from helper_gabor import compute_intens
 
+from helper_classify import classify_patch_group
+
 from time import time
+from time import sleep
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_extraction.image import extract_patches_2d
 from sklearn.feature_extraction.image import reconstruct_from_patches_2d
@@ -27,6 +30,7 @@ from joblib import Parallel, delayed
 
 import sys
 import getopt
+import os
 
 import dill
 import joblib
@@ -39,19 +43,19 @@ path = "ct/" # path to the CTs and the associated labels
 im_name = "CT.nii.gz" # string used to select the images
 lb_name = "CT_CTV.nii.gz" # string used to select the labels
 ro_name = "ATL_CTV_DILATE.nii.gz" # string used to select regions of interest
-pickle = "training_data_CTV_12_atl_512_int.pkl" # path and filename to save the SliceInfos
+pickle = "training_data_CTV_12_atl_256_int_P100.pkl" # path and filename to save the SliceInfos
 recons = "recons_12_3.pkl" # path and filename to store the patches of reconstruction
 psize = 12 # patch "radius", so the patch dimensions are psize x psize
 # how many "principal component" patches to generate per slice per class
 # for example, 10 will result in 10 PC patches for masked, 10 PC patches
 # for non-masked regions.
-pc_max = 500
+pc_max = 100
 ct_cap_min = -1000 # minimum CT brightness (set ct_cap_max for no clipping)
 ct_cap_max = 1000 # maximum CT brightness (set to 0 for no clipping)
 ct_monte = 1 # 1 will use random patches; 0 will use PCA patches
-no_trees = 10 # number of trees to use for classifier
+no_trees = 20 # number of trees to use for classifier
 fullspec_i = 3
-crop = None
+crop = (256, 256)
 np.seterr(all='ignore')
 
 """
@@ -538,6 +542,123 @@ def rf_reconstruct(jobs, slice_infos, i):
         dill.dump(recons_im, f)
 
 """
+Generate labels using Random Forest.
+"""
+def rf_reconstruct2(jobs, slice_infos, i):
+    t0 = time()
+    feats, labels = generate_training_feats(slice_infos, i)
+    labels = np.array(labels)
+    print(feats.shape, labels.shape)
+    RF = train_rf_classifier(feats, labels, no_trees)
+
+    dt1 = time() - t0   
+    t0 = time()
+    
+    test_sl = slice_infos[i]
+    image = test_sl.slice_im
+    rimage = test_sl.slice_ro
+    
+    kernels = generate_kernels()
+    
+    dt2 = time() - t0
+    t0 = time()
+    
+    # break the image into patches; all of these will be classified
+    patch_size = (psize, psize)
+    # _a stands for "all"
+    patches_a = extract_patches_2d(image, patch_size)
+    # _p stands for "predict"
+    
+    patches_r = extract_patches_2d(rimage, patch_size)
+    # _r stands for "registered"
+    
+    dt3 = time() - t0
+    t0 = time()
+    
+    # dump the RF
+    #fn_rf = 'rf.joblib'
+    #joblib.dump(RF, fn_rf)
+    
+    dt4 = time() - t0
+    t0 = time()
+    
+    chunk_size = len(patches_a) / float(jobs)
+    chunk_size = int(chunk_size / 8)
+    
+    # save the Random Forest classifier to disk
+    fn_rf = "tmp/rf.pkl"
+    fd_rf = open(fn_rf, 'wb')
+    dill.dump(RF, fd_rf)
+    fd_rf.close()
+    
+    
+    # save the kernels to disk
+    fn_kern = "tmp/kern.pkl" 
+    fd_kern = open(fn_kern, 'wb')
+    dill.dump(kernels, fd_kern)
+    fd_kern.close()
+    
+    # list which will contain the filenames of the patch chunks
+    fn_chunks = []
+    
+    # break both patch groups into chunk-sized sets and save each of them
+    # to disk
+    for j in range(0, len(patches_a), int(chunk_size)):
+        # determine the bounds of this chunk
+        a = j
+        b = j + int(chunk_size)
+        if b >= len(patches_a):
+            b = len(patches_a) - 1
+        
+        # create a chunk
+        patches_a_chunk = patches_a[a:b]
+        patches_r_chunk = patches_r[a:b]
+        
+        # put it together
+        chunk = [(a, b, len(patches_a)), patches_a_chunk, patches_r_chunk]
+
+        # generate a filename for this chunk
+        fn_chunk = "tmp/" + "patches_" + str(a) + "_" + str(b) + ".pkl"
+        fn_chunks.append(fn_chunk)        
+        
+        # serialise it to disk
+        fd_chunk = open(fn_chunk, 'wb')
+        dill.dump(chunk, fd_chunk)
+        fd_chunk.close()
+        
+    
+    # check each patch
+    if len(sys.argv) >= 2:
+        #patches_p = Parallel(n_jobs=jobs)(delayed(classify_patch)(RF, kernels, patches_a, i) for i in range(len(patches_a)))
+        #patches_p = Parallel(n_jobs=jobs)(delayed(classify_patch_w)(fn_rf, kernels, patches_a, i) for i in range(len(patches_a)))
+        #patches_x = Parallel(n_jobs=jobs)(delayed(classify_patch_p)(fn_rf, kernels, patches_a, patches_r, i, i+int(chunk_size)) for i in range(0, len(patches_a), int(chunk_size)))    
+        #patches_x = Parallel(n_jobs=jobs)(delayed(classify_patch_f)(rf_pkl, kernels_pkl, patches_a_pkl, patches_r_pkl, i, i+int(chunk_size)) for i in range(0, len(patches_a), int(chunk_size)))            
+        patches_x =  Parallel(n_jobs=jobs)(delayed(classify_patch_group)(fn_rf, fn_kern, fn_chunk) for fn_chunk in fn_chunks)            
+        patches_p = []        
+        for group in patches_x:
+            patches_p.extend(group)
+    else:
+        patches_p = []
+        for i in range(len(patches_a)):
+            patches_p.append(classify_patch_w(RF, kernels, patches_a, i))
+        
+            
+    dt5 = time() - t0
+    t0 = time()
+    
+    # reconstruct based on the patch
+    recons_im = reconstruct_from_patches_2d(np.asarray(patches_p), image.shape)
+    
+    dt6 = time() - t0
+    t0 = time()
+    
+    print("Completed Reconstruction {}/{}: {} DT: {:.2f} {:.2f} {:.2f} {:.2f} {:.2f} {:.2f}".format(i, len(slice_infos), recons, dt1, dt2, dt3, dt4, dt5, dt6))  
+    
+    # save reconstruction!
+    with open(recons, 'wb') as f:
+        dill.dump(recons_im, f)
+
+"""
 Threshold a reconstructed image by pushing numbers below value down to 0 and
 numbers equal to or above value up to 1.
 """
@@ -595,11 +716,11 @@ def generate_labels(jobs):
     global recons
     with open(pickle, 'rb') as f:
         slice_infos = dill.load(f)
-    for x in range(0, 30):
+    for x in range(21, 30):
         fullspec_i = x
         recons = "recons_" + str(psize) + "_" + str(fullspec_i) + ".pkl"
         print("Working on...", recons)
-        rf_reconstruct(jobs, slice_infos, fullspec_i)
+        rf_reconstruct2(jobs, slice_infos, fullspec_i)
 
 def generate_reports():
     with open(pickle, 'rb') as f:
@@ -610,9 +731,9 @@ def generate_reports():
     allsims = []
     
     # go through each case
-    for i in range(0, 35):
+    for i in range(0, 25):
         allsims.append([])
-        with open("recons_ctv_atl_512_int/recons_12_" + str(i) + ".pkl", 'rb') as f:
+        with open("recons_ctv_atl_256_int_P100_rf10/recons_12_" + str(i) + ".pkl", 'rb') as f:
             recons_im = dill.load(f)
             recons_th = threshold(recons_im, threshv, True)
             recons_tv = threshold(recons_im, threshv)
@@ -638,7 +759,7 @@ def generate_reports():
         recons_tv = threshold(recons_im, best_thresh)
         
         # plot each
-        plt.figure(figsize=(8,12))
+        f = plt.figure(figsize=(8,12))
         #plt.subplot(4, 1, 1)
         
         plt.axis('off')
@@ -664,13 +785,15 @@ def generate_reports():
         plt.subplot(3, 2, 6)
         plt.axis('off')
         plt.imshow(mask_out(slice_im, real_lb), cmap=plt.cm.gray)
-        plt.suptitle("CTV Reconstructions with ATL/INT at Threshold {}, Case {}".format(best_thresh,i) + "\nSimilarity: {} | Range: {}".format(compare_im(recons_th, real_lb), min_max(slice_infos[i])))
-        plt.savefig('compares_ctv_atl_512_int/case_' + str(i) + '.png')
+        plt.suptitle("CTV Reconstructions with ATL_P100_rf10/INT at Threshold {}, Case {}".format(best_thresh,i) + "\nSimilarity: {} | Range: {}".format(compare_im(recons_th, real_lb), min_max(slice_infos[i])))
+        plt.savefig('compares_ctv_atl_256_int_P100_rf10/case_' + str(i) + '.png')
+        
+        f.clf()
     
-    with open('compares_ctv_atl_512/sims.pkl', 'wb') as f:
+    with open('compares_ctv_atl_256_int/sims.pkl', 'wb') as f:
         dill.dump(allsims, f)
     
-    print("Average DSC: ", np.mean(allbestsims))
+    print("Average DSC: ", np.median(allbestsims))
 
 """
 Commandline arguments for classification routine:
