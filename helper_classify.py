@@ -60,15 +60,15 @@ that it expects are temporary files that are destroyed once the reconstruction
 is complete.
 """
 def classify_patch_group(fn_rf, fn_kern, fn_patch_info):
+    t0 = time()
     RF = dill.load(open(fn_rf, 'rb')) # unpack the RF classifier
     kernels = dill.load(open(fn_kern, 'rb')) # unpack the kernels
-    patch_info = dill.load(open(fn_patch_info), 'rb') # unpack the patch info
+    patch_info = dill.load(open(fn_patch_info, 'rb')) # unpack the patch info
     
     a, b, c = patch_info[0] # get the bounds of the set
     patches_a = patch_info[1] # grab the set to classify
     patches_r = patch_info[2] # grab the set to compare with (atlas mask)
     
-    print("Classifying group {}-{}/{}".format(a, b, c))
     
     results = []
     
@@ -82,4 +82,6 @@ def classify_patch_group(fn_rf, fn_kern, fn_patch_info):
             results.append(np.full(patch.shape, prediction))
         else: # the associated ROI patch is totally zero
             results.append(np.zeros(patch.shape))
+    dt = time() - t0
+    print("Classified group {}-{}/{} in {:.2f} time".format(a, b, c, dt))
     return results
