@@ -115,7 +115,10 @@ def get_randoms(patches, max_patches):
 
 def get_randoms_w(patches, vals, max_patches):
     #print(len(patches)-1, max_patches)
-    select = np.random.random_integers(0, len(patches)-1, max_patches)
+    if len(patches) == 0:
+        select = []
+    else:        
+        select = np.random.random_integers(0, len(patches)-1, max_patches)
     randoms = []
     randoms_vals = []
     for i in select:

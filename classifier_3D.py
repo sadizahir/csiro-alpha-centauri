@@ -265,9 +265,9 @@ def create_sliceinfo_w(images_fn, labels_fn, regint_fn, kernels, i, slice_no=Non
     return SliceInfo(*si_payload)
 
 def create_volume_info(images_fn, labels_fn, regint_fn, kernels, i, jobs):
-    print("Creating Volume Info... {}/{}: {} ({} Slices)".format(i+1, len(images_fn), labels_fn[i], ))
+    print("Creating Volume Info... {}/{}: {} ({} Slices)".format(i+1, len(images_fn), labels_fn[i], find_no_slices(path + images_fn[i])))
     slice_infos = Parallel(n_jobs=jobs)(delayed(create_sliceinfo_w)(images_fn, 
-                           labels_fn, regint_fn, kernels, i, j) for j in range(find_no_slices(images_fn)))
+                           labels_fn, regint_fn, kernels, i, j) for j in range(find_no_slices(path + images_fn[i])))
     v = VolumeInfo(slice_infos)
     dill.dump(v, "Case" + str(i) + "VINF.pkl")
     
