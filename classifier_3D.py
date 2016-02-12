@@ -39,6 +39,7 @@ import matplotlib.pyplot as plt
 
 # CONSTANTS
 path = "ct/" # path to the CTs and the associated labels
+vol_dir = "volumeInfos/"
 im_name = "CT.nii.gz" # string used to select the images
 lb_name = "CT_CTV.nii.gz" # string used to select the labels
 ro_name = "ATL_CTV_DILATE.nii.gz" # string used to select regions of interest
@@ -269,7 +270,7 @@ def create_volume_info(images_fn, labels_fn, regint_fn, kernels, i, jobs):
     slice_infos = Parallel(n_jobs=jobs)(delayed(create_sliceinfo_w)(images_fn, 
                            labels_fn, regint_fn, kernels, i, j) for j in range(find_no_slices(path + images_fn[i])))
     v = VolumeInfo(slice_infos)
-    dill.dump(v, "Case" + str(i) + "VINF.pkl")
+    dill.dump(v, open("case_" + str(i) + "_VINF.pkl", 'wb'))
     
 
 """
@@ -290,18 +291,17 @@ def generate_training_data(jobs):
     with open(pickle, 'wb') as f:
         dill.dump(slice_infos, f)
 
-def generate_training_data_vol(jobs):
+def generate_training_data_vol(jobs, case):
     print("Generating Training Data (Volume)...")
     
     images_fn, labels_fn, regint_fn = get_filenames(path, im_name, lb_name, ro_name) 
     kernels = generate_kernels()
     
     for i in range(len(images_fn)):
-        create_volume_info(images_fn, labels_fn, regint_fn, kernels, i, jobs)
-        break
-    
-    
-
+        if i == case:
+            create_volume_info(images_fn, labels_fn, regint_fn, kernels, i, jobs)
+            break
+        
 """
 Given access to an entire set of SliceInfo objects and given an index which
 will be the index of the "test slice", creates a set of "features" and
@@ -336,8 +336,9 @@ def generate_training_feats(slice_infos, i):
         # if it's the ith slice, don't include it in the training
         if j == i:
             continue
-        train_m.append(slice_infos[j].feats_m)
-        intens_m.append(slice_infos[j].intens_m)
+        if len(slice_infos[j].feats_m) != 0:
+            train_m.append(slice_infos[j].feats_m)
+            intens_m.append(slice_infos[j].intens_m)
         train_n.append(slice_infos[j].feats_n)
         intens_n.append(slice_infos[j].intens_n)
         if slice_infos[j].vals_m != None:
@@ -381,6 +382,21 @@ def generate_training_feats(slice_infos, i):
     return samples, labels
 
 """
+Looks at all the volumes in a directory and makes a massive training feature
+set from all the volumes.
+"""
+def generate_training_feats_vol(vol_dir, vol_out):
+    print(sorted(os.listdir(vol_dir)))
+    all_samples_labels = []
+    for i, vfn in enumerate(sorted(os.listdir(vol_dir))):
+        if i != vol_out:
+            vfn = open(vol_dir + vfn, 'rb')
+            v = dill.load(vfn)
+            vfn.close()
+            all_samples_labels.append(generate_training_feats(v.slice_infos, -1))
+    return all_samples_labels
+
+"""
 Given a set of features, a set of associated labels, and the number of trees
 that the classifier should use, trains a random forest classifier on the data
 and returns a reference to the classifier for use in predicting the classes
@@ -393,6 +409,139 @@ def train_rf_classifier(features, labels, no_trees):
     rf = RandomForestClassifier(n_estimators=no_trees, n_jobs=-1)
     rf.fit(features, labels)
     return rf
+
+"""
+Trains a random forest using a set of volumeInfos in vol_dir.
+"""
+def train_rf_vols(vol_dir, vol_out):
+    asl = generate_training_feats_vol(vol_dir, vol_out)
+    bs = []
+    bl = []
+    for case in asl:
+        bs.extend(case[0])
+        bl.extend(case[1])
+    bs = np.array(bs)
+    rf = train_rf_classifier(bs, bl, no_trees)
+    dill.dump(rf, open("vol_rf_" + str(vol_out) + ".pkl", "wb"))
+
+"""
+Given a filename to a volumeInfo and a filename to a RandomForest, use the
+RandomForest to try to generate a 3D label from the volume.
+
+Will try to reconstruct the ith element and save it.
+
+Obviously, the RandomForest should have not been trained on this volume.
+"""
+def rf_reconstruct_vol(jobs, vol_fn, rf_fn, i):
+    vol_fd = open(vol_fn, "rb")
+    rf_fd = open(rf_fn, "rb")
+    vol = dill.load(vol_fd)
+    RF = dill.load(rf_fd)
+    vol_fd.close()
+    rf_fd.close()
+    slice_infos = vol.slice_infos
+    
+    t0 = time()
+
+    dt1 = time() - t0   
+    t0 = time()
+    
+    test_sl = slice_infos[i]
+    image = test_sl.slice_im
+    rimage = test_sl.slice_ro
+    
+    kernels = generate_kernels()
+    
+    dt2 = time() - t0
+    t0 = time()
+    
+    # break the image into patches; all of these will be classified
+    patch_size = (psize, psize)
+    # _a stands for "all"
+    patches_a = extract_patches_2d(image, patch_size)
+    # _p stands for "predict"
+    
+    patches_r = extract_patches_2d(rimage, patch_size)
+    # _r stands for "registered"
+    
+    dt3 = time() - t0
+    t0 = time()
+    
+    # dump the RF
+    #fn_rf = 'rf.joblib'
+    #joblib.dump(RF, fn_rf)
+    
+    dt4 = time() - t0
+    t0 = time()
+    
+    chunk_size = len(patches_a) / float(jobs)
+    chunk_size = int(chunk_size / 8)
+    
+    # save the kernels to disk
+    fn_kern = "tmp/kern_" + str(i) + ".pkl" 
+    fd_kern = open(fn_kern, 'wb')
+    dill.dump(kernels, fd_kern)
+    fd_kern.close()
+    
+    # list which will contain the filenames of the patch chunks
+    fn_chunks = []
+    
+    # break both patch groups into chunk-sized sets and save each of them
+    # to disk
+    for j in range(0, len(patches_a), int(chunk_size)):
+        # determine the bounds of this chunk
+        a = j
+        b = j + int(chunk_size)
+        if b >= len(patches_a):
+            b = len(patches_a) - 1
+        
+        # create a chunk
+        patches_a_chunk = patches_a[a:b]
+        patches_r_chunk = patches_r[a:b]
+        
+        # put it together
+        chunk = [(a, b, len(patches_a)), patches_a_chunk, patches_r_chunk]
+
+        # generate a filename for this chunk
+        fn_chunk = "tmp/" + "patches_" + str(a) + "_" + str(b) + "_" + str(i) + ".pkl"
+        fn_chunks.append(fn_chunk)        
+        
+        # serialise it to disk
+        fd_chunk = open(fn_chunk, 'wb')
+        dill.dump(chunk, fd_chunk)
+        fd_chunk.close()
+        
+    
+    # check each patch
+    if len(sys.argv) >= 2:
+        #patches_p = Parallel(n_jobs=jobs)(delayed(classify_patch)(RF, kernels, patches_a, i) for i in range(len(patches_a)))
+        #patches_p = Parallel(n_jobs=jobs)(delayed(classify_patch_w)(fn_rf, kernels, patches_a, i) for i in range(len(patches_a)))
+        #patches_x = Parallel(n_jobs=jobs)(delayed(classify_patch_p)(fn_rf, kernels, patches_a, patches_r, i, i+int(chunk_size)) for i in range(0, len(patches_a), int(chunk_size)))    
+        #patches_x = Parallel(n_jobs=jobs)(delayed(classify_patch_f)(rf_pkl, kernels_pkl, patches_a_pkl, patches_r_pkl, i, i+int(chunk_size)) for i in range(0, len(patches_a), int(chunk_size)))            
+        patches_x =  Parallel(n_jobs=jobs)(delayed(classify_patch_group)(rf_fn, fn_kern, fn_chunk) for fn_chunk in fn_chunks)            
+        patches_p = []        
+        for group in patches_x:
+            patches_p.extend(group)
+    else:
+        patches_p = []
+        for i in range(len(patches_a)):
+            patches_p.append(classify_patch_w(RF, kernels, patches_a, i))
+        
+            
+    dt5 = time() - t0
+    t0 = time()
+    
+    # reconstruct based on the patch
+    recons_im = reconstruct_from_patches_2d(np.asarray(patches_p), image.shape)
+    
+    dt6 = time() - t0
+    t0 = time()
+    recons = "case10_rslice_" + str(i) + ".pkl" 
+    print("Completed Reconstruction {}/{}: {} DT: {:.2f} {:.2f} {:.2f} {:.2f} {:.2f} {:.2f}".format(i, len(slice_infos), recons, dt1, dt2, dt3, dt4, dt5, dt6))     
+    
+    # save reconstruction!
+    with open(recons, 'wb') as f:
+        dill.dump(recons_im, f)
 
 """
 Generate labels using Random Forest.
@@ -558,8 +707,11 @@ def compare_im(recons_im, real_lb, display=False):
     
     recons_dice = recons_im.astype(int)
     label_dice = real_lb.astype(int)
-    dice = float(2*np.count_nonzero(recons_dice & label_dice))/(np.count_nonzero(recons_dice)
-    + np.count_nonzero(label_dice))
+    if np.count_nonzero(recons_dice) + np.count_nonzero(label_dice) == 0:
+        dice = 1
+    else:
+        dice = float(2*np.count_nonzero(recons_dice & label_dice))/(np.count_nonzero(recons_dice)
+        + np.count_nonzero(label_dice))
 
     return dice
 
@@ -575,18 +727,20 @@ def generate_labels(jobs):
         print("Working on...", recons)
         rf_reconstruct2(jobs, slice_infos, fullspec_i)
 
-def generate_reports():
-    with open(pickle, 'rb') as f:
-        slice_infos = dill.load(f)
+def generate_reports(slice_infos=None):
+    if slice_infos == None:
+        with open(pickle, 'rb') as f:
+            slice_infos = dill.load(f)
         
     threshv = 0.50
     allbestsims = []
     allsims = []
+    realsims = []
     
     # go through each case
-    for i in range(0, 25):
+    for i in range(0, 143):
         allsims.append([])
-        with open("recons_ctv_atl_256_int_P100_rf10/recons_12_" + str(i) + ".pkl", 'rb') as f:
+        with open("recons_vol_10/case10_rslice_" + str(i) + ".pkl", 'rb') as f:
             recons_im = dill.load(f)
             recons_th = threshold(recons_im, threshv, True)
             recons_tv = threshold(recons_im, threshv)
@@ -605,7 +759,7 @@ def generate_reports():
             allsims[i].append(sim)
             if sim > best_sim:
                 best_sim = sim
-                best_thresh = a
+                best_thresh = threshv
         
         allbestsims.append(best_sim)
         recons_th = threshold(recons_im, best_thresh, True)
@@ -638,15 +792,16 @@ def generate_reports():
         plt.subplot(3, 2, 6)
         plt.axis('off')
         plt.imshow(mask_out(slice_im, real_lb), cmap=plt.cm.gray)
-        plt.suptitle("CTV Reconstructions with ATL_P100_rf10/INT at Threshold {}, Case {}".format(best_thresh,i) + "\nSimilarity: {} | Range: {}".format(compare_im(recons_th, real_lb), min_max(slice_infos[i])))
-        plt.savefig('compares_ctv_atl_256_int_P100_rf10/case_' + str(i) + '.png')
+        plt.suptitle("CTV Reconstructions of Case 10 at Threshold {}, Slice {}".format(best_thresh,i) + "\nSimilarity: {} | Range: {}".format(compare_im(recons_th, real_lb), min_max(slice_infos[i])))
+        plt.savefig('compares_vol_10/case10_rslice_' + str(i) + '.png')
+        realsims.append(compare_im(recons_th, real_lb))
         
         f.clf()
     
-    with open('compares_ctv_atl_256_int/sims.pkl', 'wb') as f:
+    with open('compares_vol_10/sims.pkl', 'wb') as f:
         dill.dump(allsims, f)
     
-    print("Average DSC: ", np.median(allbestsims))
+    print("Average DSC: ", np.median(realsims))
 
 """
 Commandline arguments for classification routine:
@@ -669,7 +824,7 @@ reconstructions with the ground truth labels stored in the training data *.pkl
 file generated above and save the reports in a directory.
 """
 def main(argv):
-    supported_opts = "t:v:l:r"
+    supported_opts = "t:v:l:rf:L:"
 
     try:
         opts, args = getopt.getopt(argv[1:], supported_opts)
@@ -687,13 +842,29 @@ def main(argv):
                 jobs = 1
             generate_training_data(jobs)
         
-        if "-v" == opt: # generate training data
+        if "-v" == opt: # generate volume training data
             try:
-                jobs = int(arg)
+                brk = arg.split(',')
+                jobs = int(brk[0])
+                case = int(brk[1])
             except:
                 print("Defaulting to 1 job for training...")
                 jobs = 1
-            generate_training_data_vol(jobs)
+            generate_training_data_vol(jobs, case)
+        
+        if "-L" == opt: # generate volume labels
+            try:
+                brk = arg.split(',')
+                jobs = int(brk[0])
+                slice_no = int(brk[1])
+            except:
+                print("Defaulting to 1 job for labelling...")
+                jobs = 1
+            rf_reconstruct_vol(jobs, "volumeInfos/case_10_VINF.pkl", "vol_rf_10.pkl", slice_no)
+            
+        if "-f" == opt: # generate the random forest using the training data
+            vol_out = int(arg)
+            train_rf_vols(vol_dir, vol_out)
         
         if "-l" == opt: # generate labels
             try:

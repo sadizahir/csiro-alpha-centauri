@@ -41,7 +41,7 @@ path = "ct/" # path to the CTs and the associated labels
 im_name = "CT.nii.gz" # string used to select the images
 lb_name = "CT_CTV.nii.gz" # string used to select the labels
 ro_name = "ATL_CTV_DILATE.nii.gz" # string used to select regions of interest
-pickle = "training_data_CTV_12_atl_256_int_P100.pkl" # path and filename to save the SliceInfos
+pickle = "training_data_CTV_12_atl_512_int.pkl" # path and filename to save the SliceInfos
 recons = "recons_12_3.pkl" # path and filename to store the patches of reconstruction
 psize = 12 # patch "radius", so the patch dimensions are psize x psize
 # how many "principal component" patches to generate per slice per class
@@ -552,11 +552,12 @@ def generate_reports():
     threshv = 0.50
     allbestsims = []
     allsims = []
+    realsims = []
     
     # go through each case
-    for i in range(0, 25):
+    for i in range(0, 24):
         allsims.append([])
-        with open("recons_ctv_atl_256_int_P100_rf10/recons_12_" + str(i) + ".pkl", 'rb') as f:
+        with open("recons_ctv_atl_512_int/recons_12_" + str(i) + ".pkl", 'rb') as f:
             recons_im = dill.load(f)
             recons_th = threshold(recons_im, threshv, True)
             recons_tv = threshold(recons_im, threshv)
@@ -575,7 +576,7 @@ def generate_reports():
             allsims[i].append(sim)
             if sim > best_sim:
                 best_sim = sim
-                best_thresh = a
+                best_thresh = threshv
         
         allbestsims.append(best_sim)
         recons_th = threshold(recons_im, best_thresh, True)
@@ -608,15 +609,18 @@ def generate_reports():
         plt.subplot(3, 2, 6)
         plt.axis('off')
         plt.imshow(mask_out(slice_im, real_lb), cmap=plt.cm.gray)
-        plt.suptitle("CTV Reconstructions with ATL_P100_rf10/INT at Threshold {}, Case {}".format(best_thresh,i) + "\nSimilarity: {} | Range: {}".format(compare_im(recons_th, real_lb), min_max(slice_infos[i])))
-        plt.savefig('compares_ctv_atl_256_int_P100_rf10/case_' + str(i) + '.png')
+        plt.suptitle("CTV Reconstructions with ATL/INT at Threshold {}, Case {}".format(best_thresh,i) + "\nSimilarity: {} | Range: {}".format(compare_im(recons_th, real_lb), min_max(slice_infos[i])))
+        plt.savefig('compares_ctv_atl_512_int/case_' + str(i) + '.png')
+        
+        print(compare_im(recons_th, real_lb))
+        realsims.append(compare_im(recons_th, real_lb))
         
         f.clf()
     
-    with open('compares_ctv_atl_256_int/sims.pkl', 'wb') as f:
+    with open('compares_ctv_atl_512_int/sims.pkl', 'wb') as f:
         dill.dump(allsims, f)
     
-    print("Average DSC: ", np.median(allbestsims))
+    print("Average DSC: ", np.median(realsims))
 
 """
 Commandline arguments for classification routine:
