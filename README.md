@@ -1,4 +1,4 @@
-# mri-research
+# MRI and CT Research
 Summer vacation work on MRI/CT analysis at CSIRO.
 
 ## Dependencies
